@@ -4,7 +4,7 @@
 
 [Community Discord](https://discord.gg/bWA46Xkv96)
 
-**Tutorial: https://www.youtube.com/watch?v=XRvLZD5PUJk
+[Tutorial](https://www.youtube.com/watch?v=XRvLZD5PUJk)
 
 ---
 
