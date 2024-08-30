@@ -3,6 +3,7 @@
 **Code Generator for Unity using an Agent System**
 
 [Community Discord](https://discord.gg/bWA46Xkv96)
+**Tutorial: https://www.youtube.com/watch?v=XRvLZD5PUJk
 
 ---
 
