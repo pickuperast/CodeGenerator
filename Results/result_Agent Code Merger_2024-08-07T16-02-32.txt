@@ -1,0 +1,41 @@
+csharp
+using System.Collections.Generic;
+using UnityEngine;
+
+namespace _ZombieRoyale.Scripts.Dungeon
+{
+    public class DungeonHolderNetworked : MonoBehaviour
+    {
+        public Dictionary<int, RoomInfo> RoomInfosDict = new Dictionary<int, RoomInfo>();
+
+        private void Awake()
+        {
+            RoomInfosDict = new Dictionary<int, RoomInfo>();
+        }
+
+        public RoomInfo GetRoomInfo(int roomId)
+        {
+            if (!RoomInfosDict.ContainsKey(roomId))
+            {
+                return null;
+            }
+            return RoomInfosDict[roomId];
+        }
+
+        public void AddRoomInfo(RoomInfo roomInfo)
+        {
+            if (!RoomInfosDict.ContainsKey(roomInfo.RoomId))
+            {
+                RoomInfosDict.Add(roomInfo.RoomId, roomInfo);
+            }
+        }
+
+        public void RemoveRoomInfo(int roomId)
+        {
+            if (RoomInfosDict.ContainsKey(roomId))
+            {
+                RoomInfosDict.Remove(roomId);
+            }
+        }
+    }
+}

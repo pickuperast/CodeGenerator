@@ -1,0 +1,52 @@
+# User Agreement for Sanat Code Generator Plugin
+
+## 1. Introduction
+
+This User Agreement ("Agreement") is a legally binding contract between you ("User") and Sanat Code Generator ("Plugin"), developed by Sanat. By accessing or using the Plugin, you agree to be bound by this Agreement. If you do not agree to this Agreement, do not use the Plugin.
+
+## 2. License Grant
+
+Sanat grants you a non-exclusive, non-transferable, revocable license to use the Plugin for personal and commercial purposes in accordance with this Agreement.
+
+## 3. Restrictions
+
+You agree not to:
+- Reverse engineer, decompile, or disassemble the Plugin.
+- Use the Plugin to develop a competing product or service.
+- Use the Plugin for any unlawful or prohibited activities.
+- Remove any proprietary notices or labels from the Plugin.
+
+## 4. Ownership
+
+The Plugin is the intellectual property of Sanat and is protected by copyright, trademark, and other laws. Sanat retains all rights, title, and interest in and to the Plugin, including all related intellectual property rights.
+
+## 5. User Data
+
+The Plugin may collect and store information provided by you. Sanat will not share this information with third parties except as required by law. By using the Plugin, you consent to the collection and use of this information as described.
+The Plugin never will be collecting API keys!
+
+## 6. Disclaimer of Warranties
+
+The Plugin is provided "as is" without warranty of any kind. Sanat does not warrant that the Plugin will be uninterrupted or error-free, nor do they make any warranty as to the results that may be obtained from the use of the Plugin.
+
+## 7. Limitation of Liability
+
+In no event shall Sanat be liable for any indirect, incidental, special, or consequential damages arising out of or in connection with the use or inability to use the Plugin, even if Sanat has been advised of the possibility of such damages.
+
+## 8. Termination
+
+Sanat reserves the right to terminate this Agreement and your access to the Plugin at any time, for any reason. Upon termination, all rights granted to you under this Agreement will cease.
+
+## 9. Changes to this Agreement
+
+Sanat may modify this Agreement at any time. Any changes will be posted on the Sanat website or within the Plugin, and your continued use of the Plugin will constitute your acceptance of the modified Agreement.
+
+## 10. Governing Law
+
+This Agreement shall be governed by and construed in accordance with the laws of Unity Asset Store, without regard to its conflict of law principles.
+
+## 11. Contact Information
+
+For any questions about this Agreement, please contact Sanat at https://discord.gg/bWA46Xkv96.
+
+By using the Sanat Code Generator Plugin, you acknowledge that you have read and understand this Agreement and agree to be bound by its terms and conditions.

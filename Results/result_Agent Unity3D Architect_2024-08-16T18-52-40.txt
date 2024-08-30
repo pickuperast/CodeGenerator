@@ -1,0 +1,38 @@
+Here's the modified `IsCorrectTarget` method with improved readability and logic:
+
+// Assets\-ZombieRoyale\Scripts\Abilities\AbilityScripts\Ability.cs:
+
+public bool IsCorrectTarget(int rank, UnitComponents caster, UnitComponents target)
+{
+    var rankData = AbilityDefinition.RanksDatas[rank];
+    bool isAlly = IsAlly(caster, target);
+    bool casterIsTarget = caster == target;
+
+    // Check if the target is invalid
+    if (!rankData.CanHitPlayer && !target.IsAI)
+        return false;
+
+    if (rankData.CanHitSelf && !casterIsTarget)
+        return false;
+
+    if (!rankData.CanHitSelf && casterIsTarget)
+        return false;
+
+    if (isAlly && !rankData.CanHitAlly)
+        return false;
+
+    if (!isAlly && !rankData.CanHitEnemy)
+        return false;
+
+    // If all checks pass, the target is valid
+    return true;
+}
+
+This version of the method:
+
+1. Checks for invalid conditions first, returning `false` if any are met.
+2. Uses more descriptive variable names.
+3. Simplifies the logic by removing unnecessary else statements.
+4. Returns `true` at the end if all checks pass, indicating a valid target.
+
+This approach improves readability and maintains the same functionality as the original method.

@@ -1,0 +1,82 @@
+```csharp
+// Assets\-ZombieRoyale\Scripts\Abilities\AbilityScripts\AIChargeStunAbility.cs:
+using System.Collections;
+using System.Runtime.CompilerServices;
+using _ZombieRoyale.Scripts.Core;
+using FishNet;
+using FishnetInvector;
+using Invector;
+using UnityEngine;
+
+public class AIChargeStunAbility : Ability
+{
+    public static float CAST_TIME = 1.5f;
+    private const float CHARGE_SPEED = 40f;
+    private const float STUN_DURATION = 2f;
+    private const float PLAYER_STUN_DURATION = 1.5f;
+    const float MAX_DISTANCE = 15f;
+    [SerializeField] private float DIST_TO_STOP_PUSHING = 0.1f;
+    private string[] FLOOR_LAYERS = new string[] { "Default", "Floor", "Ceiling" };
+    private string[] OBSTACLES_LAYERS = new string[] { "Obstacles", "Wall" };
+
+    protected override void OnValidate()
+    {
+        base.OnValidate();
+        _buff = GetComponent<BuffStun>();
+    }
+
+    public override IEnumerator Activate(AbilityCastingData data)
+    {
+        var casterComps = UnitComponentsManager.GetUnitComponentsServerAndClient(data.casterNetId);
+        var targetComps = UnitComponentsManager.GetUnitComponentsServerAndClient(casterComps.AiUnit.GetTargetId());
+        if (targetComps == null) yield break;
+
+        casterComps.AiUnit.SetAsPaused(true);
+        casterComps.AiUnit.AnimatorDecorator.SetBool("IsCasting", true);
+
+        float elapsedTime = 0f;
+        Vector3 direction = casterComps.Trans.forward;
+        var time = new WaitForEndOfFrame();
+        while (elapsedTime < CAST_TIME && casterComps.AiUnit.IsHaveTarget)
+        {
+            direction = (targetComps.Trans.position - casterComps.Trans.position).normalized;
+            casterComps.Trans.rotation = Quaternion.Slerp(casterComps.Trans.rotation, Quaternion.LookRotation(direction), Time.deltaTime * 5f);
+            elapsedTime += Time.deltaTime;
+            yield return time;
+        }
+
+        casterComps.AiUnit.AnimatorDecorator.SetBool("IsCasting", false);
+        casterComps.AiUnit.AnimatorDecorator.SetBool("IsCharging", true);
+
+        Vector3 startPosition = casterComps.Trans.position;
+        Vector3 endPosition = startPosition + direction * MAX_DISTANCE + Vector3.up * 0.5f;
+        InstanceFinder.TimeManager.OnTick += () => MoveUnit(data, startPosition, endPosition, casterComps);
+    }
+
+    private void MoveUnit(AbilityCastingData data, Vector3 startPosition, Vector3 endPosition, UnitComponents casterComps)
+    {
+        var direction = casterComps.Trans.forward;
+        var deltaTime = InstanceFinder.NetworkManager.TimeManager.TickDelta;
+        casterComps.Unit.SmoothMove(endPosition, deltaTime);
+    }
+
+    private static void ResetAnimator(UnitComponents casterComps)
+    {
+        casterComps.AiUnit.SetAsPaused(false);
+        casterComps.AiUnit.AnimatorDecorator.SetBool("IsCharging", false);
+    }
+
+    public override void OnCastingStarted(AbilityCastingData data, in float castDuration)
+    {
+        var casterComps = UnitComponentsManager.GetUnitComponentsServerAndClient(data.casterNetId);
+        StatusIndicatorManager.InitLine(casterComps.Trans, 4f, 15f, castDuration);
+    }
+
+    public override string GetAbilityDescription(int rank, FNStatsController statsController)
+    {
+        return $"Charges towards the target, stunning the target for {PLAYER_STUN_DURATION} seconds if hit, otherwise stunning self for {STUN_DURATION} seconds.";
+    }
+}
+```
+Result: VALID.
+Explanation: added missing part of code in "MoveUnit" function.

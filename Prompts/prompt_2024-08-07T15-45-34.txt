@@ -1,0 +1,152 @@
+
+# CODE: // Assets\-ZombieRoyale\Scripts\InRoomSystems\DungeonHolderNetworked.cs:
+ using System;
+using System.Collections.Generic;
+using System.Text;
+using DungeonArchitect;
+using DungeonArchitect.Flow.Impl.SnapGridFlow.Components;
+using FishNet;
+using FishNet.Object;
+using FishNet.Object.Synchronizing;
+using UnityEngine;
+
+namespace _ZombieRoyale.Scripts.Dungeon
+{
+public class DungeonHolderNetworked : NetworkBehaviour
+{
+    public static DungeonHolderNetworked Instance { get; private set; }
+    public SyncDictionary<int, RoomInfoNetworkedData> RoomInfosDict => _roomInfosDict;
+    [SyncObject] private readonly SyncDictionary<int, RoomInfoNetworkedData> _roomInfosDict = new ();
+    public double ServerUptime => InstanceFinder.TimeManager.TicksToTime(InstanceFinder.TimeManager.Tick);
+
+    public DungeonHolder DungeonHolder
+    {
+        get
+        {
+            if (_dungeonHolder == null)
+            {
+                _dungeonHolder = FindObjectOfType<DungeonHolder>();
+            }
+
+            return _dungeonHolder;
+        }
+    }
+    private DungeonHolder _dungeonHolder;
+    public string ClassName => _className ??= $"{StringToHexColor.GetColoredClassName(GetType())}";
+    private string _className;
+
+    private void Awake()
+    {
+        Instance = this;
+        _roomInfosDict.OnChange += RoomInfosDictOnChange;
+    }
+
+    public void InitServer(DungeonHolder dungeonHolder)
+    {
+        _dungeonHolder = dungeonHolder;
+        List<float> collapsingTimes = DungeonHolder.GenerateCollapsingTimes();
+        for (int i = 0; i < collapsingTimes.Count; i++)
+        {
+            RoomInfoNetworkedData roomInfo = new RoomInfoNetworkedData
+            {
+                RoomId = i,
+                CollapsingTime = collapsingTimes[i]
+            };
+            _roomInfosDict.Add(i, roomInfo);
+            Debug.Log($"{ClassName} InitServer: RoomId: {i}; CollapsingTime: {collapsingTimes[i]:2}");
+        }
+    }
+
+    private void OnDisable()
+    {
+        _roomInfosDict.OnChange -= RoomInfosDictOnChange;
+    }
+
+    private void RoomInfosDictOnChange(SyncDictionaryOperation op, int roomId, RoomInfoNetworkedData value, bool asServer)
+    {
+        if (asServer) {
+            return;
+        }
+        StringBuilder sb = new StringBuilder($"{ClassName} RoomInfos_OnChange isClient:{IsClient}; isHost:{IsHost}; asServer:{asServer}; {op}");
+        
+        switch (op)
+        {
+            //Adds key with value.
+            case SyncDictionaryOperation.Add:
+                sb.Append($": [{roomId}] ServerUptime: {ServerUptime:2}");
+                InitCollapsingTime(roomId, value);
+                break;
+            //Removes key.
+            case SyncDictionaryOperation.Remove:
+                sb.Append($": [{roomId}] ");
+                
+                break;
+            //Sets key to a new value.
+            case SyncDictionaryOperation.Set:
+                sb.Append($": [{roomId}] ServerUptime: {ServerUptime:2}");
+                InitCollapsingTime(roomId, value);
+                break;
+            //Clears the dictionary.
+            case SyncDictionaryOperation.Clear:
+                break;
+            //Like SyncList, indicates all operations are complete.
+            case SyncDictionaryOperation.Complete:
+                break;
+        }
+
+        sb.Append($"{gameObject.name}");
+        Debug.Log(sb.ToString());
+    }
+
+    private void InitCollapsingTime(int roomId, RoomInfoNetworkedData value)
+    {
+        var roomInfo = GetRoomInfo(roomId);
+        roomInfo.collapsingTimer.enabled = true;
+        roomInfo.collapsingTimer.SetCollapsingTime(value.CollapsingTime);
+    }
+
+    public DungeonRoomInfo GetRoomInfo(int roomId)
+    {
+        if (roomId < 0 || roomId >= DungeonHolder.DungeonRooms.Length)
+        {
+            Debug.LogError($"{ClassName} GetRoomInfo: roomId {roomId} is out of range.");
+            return null;
+        }
+        return DungeonHolder.DungeonRooms[roomId];
+    }
+    
+    [Serializable]
+    public class RoomInfoNetworkedData
+    {
+        public int RoomId;
+        public float CollapsingTime;
+
+        public RoomInfoNetworkedData (){ }
+    }
+
+    [Serializable]
+    public class DungeonRoomInfo
+    {
+        public SnapGridFlowModule module;
+        public RoomEnterTriggerDetector enterTrigger;
+        public RoomCollapsingTimer collapsingTimer;
+        public DamagingCollider damagingCollider;
+        public BoxCollider boxCollider;
+        public DungeonSceneProviderData sceneProviderData;
+
+        public DungeonRoomInfo(GameObject dungeonRoom)
+        {
+            module = dungeonRoom.GetComponent<SnapGridFlowModule>();
+            enterTrigger = dungeonRoom.GetComponent<RoomEnterTriggerDetector>();
+            collapsingTimer = dungeonRoom.GetComponent<RoomCollapsingTimer>();
+            damagingCollider = dungeonRoom.GetComponent<DamagingCollider>();
+            boxCollider = dungeonRoom.GetComponent<BoxCollider>();
+            sceneProviderData = dungeonRoom.GetComponent<DungeonSceneProviderData>();
+        }
+    }
+}
+} 
+
+
+
+# TASK: generate new DungeonHolderNetworkedEditor script that will show values from _roomInfosDict as table together with default inspector draw. ALso it should show helper information for easy watch testing values

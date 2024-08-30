@@ -1,0 +1,303 @@
+// Assets\Sanat\CodeGenerator\ApiGemini\ApiGemini.cs
+using System;
+using System.Collections.Generic;
+using UnityEngine;
+using UnityEngine.Networking;
+
+namespace Sanat.ApiGemini
+{
+    public static class Gemini
+    {
+        public static string BaseURL { get; set; } = "https://us-central1-aiplatform.googleapis.com/v1/";
+        public static string BaseURL2 { get; set; } = "https://generativelanguage.googleapis.com/v1beta/models/";
+        public const string PREFS_GEMINI_PROJECT_NAME = "GeminiProjectName";
+        public static string TextToSpeechURL = "https://texttospeech.googleapis.com/v1/text:synthesize";
+
+        public static string GetGeminiProjectName()
+        {
+            return PlayerPrefs.GetString(PREFS_GEMINI_PROJECT_NAME, "");
+        }
+
+        public static UnityWebRequestAsyncOperation SubmitChatAsync(
+            string apiKey, 
+            string model, 
+            float temperature, 
+            int maxTokens,
+            List<ChatMessage> messages, 
+            Action<string> callback,
+            ToolConfig toolConfig = null)
+        {
+            var chatRequest = new ChatRequest(messages[0].content, temperature, toolConfig);
+            string jsonData = JsonUtility.ToJson(chatRequest);
+            string generatedUrl = $"{BaseURL2}{model}:generateContent?key={apiKey}";
+            UnityWebRequest webRequest = CreateWebRequest(apiKey, generatedUrl, jsonData);
+
+            UnityWebRequestAsyncOperation asyncOp = webRequest.SendWebRequest();
+            asyncOp.completed += (op) =>
+            {
+                var success = webRequest.result == UnityWebRequest.Result.Success;
+                var text = success ? webRequest.downloadHandler.text : string.Empty;
+                if (!success) Debug.Log($"{webRequest.error} {apiKey}\n{webRequest.downloadHandler.text}");
+                webRequest.Dispose();
+
+                if (!string.IsNullOrEmpty(text))
+                {
+                    var responseData = JsonUtility.FromJson<ChatResponse>(text);
+                    text = responseData.candidates[0].content.parts[0].text.Trim();
+                    var tokensPrompt = responseData.usageMetadata.promptTokenCount;
+                    var tokensCompletion = responseData.usageMetadata.candidatesTokenCount;
+                    var tokensTotal = responseData.usageMetadata.totalTokenCount;
+
+                    Debug.Log($"{model} Usage: prompt_tokens: {tokensPrompt}; completion_tokens: {tokensCompletion}; total_tokens: {tokensTotal}");
+                }
+                callback?.Invoke(text);
+            };
+
+            return asyncOp;
+        }
+
+        public static UnityWebRequest CreateWebRequest(string apiKey, string url, string jsonData)
+        {
+            byte[] postData = System.Text.Encoding.UTF8.GetBytes(jsonData);
+            UnityWebRequest webRequest = new UnityWebRequest(url, "POST")
+            {
+                uploadHandler = new UploadHandlerRaw(postData),
+                downloadHandler = new DownloadHandlerBuffer(),
+                disposeUploadHandlerOnDispose = true,
+                disposeDownloadHandlerOnDispose = true
+            };
+            webRequest.SetRequestHeader("Content-Type", "application/json");
+
+            return webRequest;
+        }
+
+        public static void GenerateTextToSpeech(string text, string languageCode, string name, string ssmlGender, Action<AudioClip> callback)
+        {
+            var request = new TextToSpeechRequest(text, languageCode, name, ssmlGender);
+            string jsonData = JsonUtility.ToJson(request);
+            UnityWebRequest webRequest = CreateWebRequest(GetGeminiProjectName(), TextToSpeechURL, jsonData);
+
+            UnityWebRequestAsyncOperation asyncOp = webRequest.SendWebRequest();
+            asyncOp.completed += (op) =>
+            {
+                var success = webRequest.result == UnityWebRequest.Result.Success;
+                if (!success)
+                {
+                    Debug.Log($"{webRequest.error} {GetGeminiProjectName()}\n{webRequest.downloadHandler.text}");
+                    callback?.Invoke(null);
+                    return;
+                }
+                
+                var audioData = webRequest.downloadHandler.data;
+                float[] floatData = ConvertByteToFloatArray(audioData);
+                AudioClip audioClip = AudioClip.Create("TextToSpeech", floatData.Length, 1, 44100, false);
+                audioClip.SetData(floatData, 0);
+                callback?.Invoke(audioClip);
+            };
+        }
+
+        private static float[] ConvertByteToFloatArray(byte[] byteArray)
+        {
+            int floatArrayLength = byteArray.Length / 4;
+            float[] floatArray = new float[floatArrayLength];
+            for (int i = 0; i < floatArrayLength; i++)
+            {
+                floatArray[i] = BitConverter.ToSingle(byteArray, i * 4);
+            }
+            return floatArray;
+        }
+    }
+
+    [Serializable]
+    public class TextToSpeechRequest
+    {
+        public Input input;
+        public Voice voice;
+        public AudioConfig audioConfig;
+
+        public TextToSpeechRequest(string text, string languageCode, string name, string ssmlGender)
+        {
+            input = new Input { text = text };
+            voice = new Voice { languageCode = languageCode, name = name, ssmlGender = ssmlGender };
+            audioConfig = new AudioConfig { audioEncoding = "MP3" };
+        }
+    }
+
+    [Serializable]
+    public class Input
+    {
+        public string text;
+    }
+
+    [Serializable]
+    public class Voice
+    {
+        public string languageCode;
+        public string name;
+        public string ssmlGender;
+    }
+
+    [Serializable]
+    public class AudioConfig
+    {
+        public string audioEncoding;
+    }
+
+    [Serializable]
+    public class ChatRequest
+    {
+        public Contents contents;
+        public SafetySettings safety_settings;
+        public GenerationConfig generation_config;
+        public ToolConfig tool_config;
+
+        public ChatRequest(string message, float temperature, ToolConfig toolConfig = null)
+        {
+            contents = new Contents
+            {
+                role = "user",
+                parts = new Parts { text = message }
+            };
+            safety_settings = new SafetySettings
+            {
+                category = "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                threshold = "BLOCK_LOW_AND_ABOVE"
+            };
+            generation_config = new GenerationConfig
+            {
+                temperature = temperature,
+                topP = 0.8f,
+                topK = 40
+            };
+            tool_config = toolConfig;
+        }
+    }
+
+    [Serializable]
+    public class Contents
+    {
+        public string role;
+        public Parts parts;
+    }
+
+    [Serializable]
+    public class Parts
+    {
+        public string text;
+    }
+
+    [Serializable]
+    public class SafetySettings
+    {
+        public string category;
+        public string threshold;
+    }
+
+    [Serializable]
+    public class GenerationConfig
+    {
+        public float temperature;
+        public float topP;
+        public int topK;
+    }
+
+    [Serializable]
+    public class ChatMessage
+    {
+        public string role;
+        public string content;
+
+        public ChatMessage(string role, string content)
+        {
+            this.role = role;
+            this.content = content;
+        }
+    }
+
+    [Serializable]
+    public class ChatResponse
+    {
+        public List<Candidate> candidates;
+        public UsageMetadata usageMetadata;
+    }
+
+    [Serializable]
+    public class Candidate
+    {
+        public Content content;
+        public string finishReason;
+        public List<SafetyRating> safetyRatings;
+    }
+
+    [Serializable]
+    public class Content
+    {
+        public List<Part> parts;
+        public string role;
+    }
+
+    [Serializable]
+    public class Part
+    {
+        public string text;
+    }
+
+    [Serializable]
+    public class SafetyRating
+    {
+        public string category;
+        public string probability;
+    }
+
+    [Serializable]
+    public class UsageMetadata
+    {
+        public int promptTokenCount;
+        public int candidatesTokenCount;
+        public int totalTokenCount;
+    }
+
+    [Serializable]
+    public class ToolConfig
+    {
+        public FunctionCallingConfig functionCallingConfig;
+    }
+
+    [Serializable]
+    public class FunctionCallingConfig
+    {
+        public string mode;
+        public List<string> allowedFunctionNames;
+    }
+
+    [Serializable]
+    public class FunctionDeclaration
+    {
+        public string name;
+        public string description;
+        public FunctionDeclarationSchema parameters;
+    }
+
+    [Serializable]
+    public class FunctionDeclarationSchema
+    {
+        public string type;
+        public Dictionary<string, FunctionDeclarationSchemaProperty> properties;
+        public string description;
+        public List<string> required;
+    }
+
+    [Serializable]
+    public class FunctionDeclarationSchemaProperty
+    {
+        public string type;
+        public string format;
+        public string description;
+        public bool nullable;
+        public FunctionDeclarationSchema items;
+        public List<string> enumValues;
+        public Dictionary<string, FunctionDeclarationSchemaProperty> properties;
+        public List<string> required;
+        public object example;
+    }
+}

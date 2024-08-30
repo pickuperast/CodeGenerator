@@ -1,0 +1,78 @@
+```csharp
+// Assets\-ZombieRoyale\Scripts\Abilities\AbilityScripts\AIDeathLaserAbility.cs:
+using System.Collections;
+using System.Collections.Generic;
+using _ZombieRoyale.Scripts.Core;
+using FishNet.Object;
+using FishnetInvector;
+using UnityEngine;
+
+public class AIDeathLaserAbility : Ability
+{
+    [SerializeField] private LineRenderer laserRenderer;
+    [SerializeField] private float laserDuration = 5f;
+    [SerializeField] private float missileInterval = 0.5f;
+    [SerializeField] private float damageAmount = 10f;
+    [SerializeField] private LayerMask targetLayerMask;
+
+    private WaitForSeconds missileWait;
+
+    private void Awake()
+    {
+        missileWait = new WaitForSeconds(missileInterval);
+    }
+
+    public override IEnumerator Activate(AbilityCastingData data)
+    {
+        var casterComps = UnitComponentsManager.GetUnitComponentsServerAndClient(data.casterNetId);
+        Transform casterTransform = casterComps.HealthController.transform;
+
+        laserRenderer.enabled = true;
+        laserRenderer.SetPosition(0, casterTransform.position);
+        laserRenderer.SetPosition(1, casterTransform.position + casterTransform.forward * 100f);
+
+        float elapsedTime = 0f;
+        while (elapsedTime < laserDuration)
+        {
+            ShootInvisibleMissile(casterTransform);
+            elapsedTime += missileInterval;
+            yield return missileWait;
+        }
+
+        laserRenderer.enabled = false;
+    }
+
+    private void ShootInvisibleMissile(Transform casterTransform)
+    {
+        RaycastHit hit;
+        if (Physics.Raycast(casterTransform.position, casterTransform.forward, out hit, Mathf.Infinity, targetLayerMask))
+        {
+            var targetHealth = hit.collider.GetComponent<FishnetInvectorHealthController>();
+            if (targetHealth != null)
+            {
+                ApplyDamage(targetHealth);
+            }
+        }
+    }
+
+    private void ApplyDamage(FishnetInvectorHealthController targetHealth)
+    {
+        vDamage damage = new vDamage
+        {
+            damageValue = (int)damageAmount,
+            Sender = targetHealth.transform,
+            senderNetworkObjectID = targetHealth.NetworkObject.ObjectId,
+            hitPosition = targetHealth.transform.position,
+            receiver = targetHealth.transform,
+            type = vDamage.DamageType.Melee
+        };
+
+        targetHealth.TakeDamage(damage);
+    }
+
+    public override string GetAbilityDescription(int rank, FNStatsController statsController)
+    {
+        return $"Fires a continuous laser for {laserDuration} seconds, dealing {damageAmount} damage every {missileInterval} seconds to any target hit.";
+    }
+}
+```

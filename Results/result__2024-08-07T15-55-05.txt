@@ -1,0 +1,89 @@
+```C#
+using System.Linq;
+using UnityEditor;
+using UnityEngine;
+
+namespace _ZombieRoyale.Scripts.Dungeon.Editor
+{
+    [CustomEditor(typeof(DungeonHolderNetworked))]
+    public class DungeonHolderNetworkedEditor : UnityEditor.Editor
+    {
+        private DungeonHolderNetworked _dungeonHolderNetworked;
+    
+        public override void OnInspectorGUI()
+        {
+            _dungeonHolderNetworked = target as DungeonHolderNetworked;
+            base.OnInspectorGUI();
+
+            GUILayout.Space(20);
+            EditorGUILayout.LabelField("Room Infos:", EditorStyles.boldLabel);
+        
+            if (_dungeonHolderNetworked.RoomInfosDict != null && _dungeonHolderNetworked.RoomInfosDict.Count > 0)
+            {
+                GUILayout.BeginVertical("box");
+                var keys = _dungeonHolderNetworked.RoomInfosDict.Keys.ToArray();
+                foreach (var key in keys)
+                {
+                    GUILayout.BeginHorizontal();
+                    GUILayout.Label($"Room ID: {key}");
+                    var roomInfo = _dungeonHolderNetworked.RoomInfosDict[key];
+                    GUILayout.Label($"Collapsing Time: {roomInfo.CollapsingTime}");
+                    GUILayout.EndHorizontal();
+                }
+                GUILayout.EndVertical();
+            }
+        
+            GUILayout.Space(20);
+            EditorGUILayout.LabelField("Helper:", EditorStyles.boldLabel);
+
+            if (GUILayout.Button("Log Room Infos"))
+            {
+                LogRoomInfos();
+            }
+        }
+    
+        private void LogRoomInfos()
+        {
+            if (_dungeonHolderNetworked.RoomInfosDict == null) return;
+            foreach (var kvp in _dungeonHolderNetworked.RoomInfosDict)
+            {
+                Debug.Log($"Room ID: {kvp.Key}, Collapsing Time: {kvp.Value.CollapsingTime}");
+            }
+        }
+    }
+}
+```
+
+**Explanation:**
+
+1. **Namespace:** The code is placed within the `_ZombieRoyale.Scripts.Dungeon.Editor` namespace.
+2. **CustomEditor Attribute:** The `[CustomEditor(typeof(DungeonHolderNetworked))]` attribute indicates that this editor class is specifically for the `DungeonHolderNetworked` script.
+3. **Private Variable:**  `_dungeonHolderNetworked` stores a reference to the `DungeonHolderNetworked` script that's being edited.
+4. **`OnInspectorGUI()` Method:** This method is called by Unity to draw the custom inspector interface.
+   -  `base.OnInspectorGUI();` draws the default inspector elements for the `DungeonHolderNetworked` script.
+   -  `GUILayout.Space(20);` adds some spacing between elements.
+   -  `EditorGUILayout.LabelField("Room Infos:", EditorStyles.boldLabel);` displays a label for the "Room Infos" section.
+   -  `if (_dungeonHolderNetworked.RoomInfosDict != null && _dungeonHolderNetworked.RoomInfosDict.Count > 0)` checks if the `RoomInfosDict` is not null and has elements.
+     -  If true, a vertical layout is created using `GUILayout.BeginVertical("box")`.
+     -  `var keys = _dungeonHolderNetworked.RoomInfosDict.Keys.ToArray();` gets an array of keys from the `RoomInfosDict`.
+     -  `foreach (var key in keys)` iterates through each key.
+       -  `GUILayout.BeginHorizontal();` starts a horizontal layout for each room info.
+       -  `GUILayout.Label($"Room ID: {key}");` displays the room ID.
+       -  `var roomInfo = _dungeonHolderNetworked.RoomInfosDict[key];` retrieves the `RoomInfoNetworkedData` for the current key.
+       -  `GUILayout.Label($"Collapsing Time: {roomInfo.CollapsingTime}");` displays the collapsing time for the room.
+       -  `GUILayout.EndHorizontal();` ends the horizontal layout.
+     -  `GUILayout.EndVertical();` ends the vertical layout.
+5. **Helper Section:**
+   -  `EditorGUILayout.LabelField("Helper:", EditorStyles.boldLabel);` adds a "Helper" label.
+   -  `if (GUILayout.Button("Log Room Infos"))` creates a button that, when clicked, calls the `LogRoomInfos()` function.
+6. **`LogRoomInfos()` Method:**
+   -  `if (_dungeonHolderNetworked.RoomInfosDict == null) return;` checks if the `RoomInfosDict` exists before logging.
+   -  `foreach (var kvp in _dungeonHolderNetworked.RoomInfosDict)` iterates through each key-value pair in the dictionary.
+   -  `Debug.Log($"Room ID: {kvp.Key}, Collapsing Time: {kvp.Value.CollapsingTime}");` logs the room ID and collapsing time to the console.
+
+**How to Use:**
+
+1. **Create a Script:**  Save the above code as `DungeonHolderNetworkedEditor.cs` in your project's `Editor` folder.
+2. **Attach the Script:** Select a `DungeonHolderNetworked` object in your scene and then go to the Inspector panel. The custom editor will appear, displaying the "Room Infos" table and the "Helper" button.
+
+This custom editor will provide a more user-friendly way to view and interact with the room information data in your `DungeonHolderNetworked` script.

@@ -1,0 +1,2823 @@
+# ROLE:
+Unity3D code architect.
+
+# GOAL:
+Write specific and detailed code for Unity3D projects.
+
+# BACKSTORY:
+You are a Unity 3D Code Writer. You write specific and detailed code for Unity 3D projects in C#.
+You provide solutions to coding problems, write scripts for game mechanics, and integrate various assets and systems.
+You have a deep understanding of Unity 3D, C#, and game development principles.
+You follow best practices for performance optimization, code organization, and version control.
+You collaborate closely with the Unity 3D Architect to ensure that the codebase aligns with the overall project architecture.
+Stick and balance between with Clean code principles and SOLID principles and 'Clean' Code, Horrible Performance - by Casey Muratori.
+Make clean and efficient code, remember that focusing exclusively on either aspect can lead to less optimal results.
+Maintaining a good understanding of the trade-offs between readability, maintainability, and performance is crucial.
+Keep in mind that NetworkBehaviour constructors are not allowed.
+Remember that [SyncObject], [SyncVar] are allowed only in NetworkBehaviour classes.
+Always provide FULL CODE of the file just to copy paste code and application should run.
+DO NOT write explanations for the code.
+DO NOT skip showing fully method where code was changed.
+DO NOT provide comments in code.
+# CODE: // Assets\-ZombieRoyale\Scripts\InRoomSystems\Gameplay\TorchGlobalManager.cs:
+ using System;
+using System.Text;
+using _ZombieRoyale.Scripts.Dungeon;
+using FishNet;
+using FishNet.Connection;
+using FishNet.Object;
+using FishNet.Object.Synchronizing;
+using Invector.vCharacterController.vActions;
+using UnityEngine;
+
+public class TorchGlobalManager : NetworkBehaviour
+{
+    private TorchStatus[] _torches;
+    private readonly SyncList<TorchStatusNetworked> _torchesNetworked = new ();
+    public static TorchGlobalManager Instance { get; private set; }
+    public string ClassName => _className ??= StringToHexColor.GetColoredClassName(GetType());
+    protected string _className;
+
+    private void Awake()
+    {
+        Instance = this;
+        _torchesNetworked.OnChange += _torchesNetworked_OnChange;
+    }
+
+    public void Init()
+    {
+        _torches = DungeonHolder.Instance.LoadTorches();
+    }
+    
+    [ServerRpc(RequireOwnership = false)] public void CmdPlayerStartedInteracting(int torchId, NetworkConnection conn = null)
+    {
+        Debug.Log($"{ClassName} Player started interacting with {gameObject.name}.");
+        vTriggerGenericAction triggerAction = GetTorchStatus(torchId).TorchController.TriggerGenericAction;
+        switch (triggerAction.inputType)
+        {
+            case vTriggerGenericAction.InputType.GetButtonDown:
+                InternalPlayerFinishedInteracting(torchId);
+                break;
+            case vTriggerGenericAction.InputType.GetButtonTimer:
+                LoadingBarLogic.Instance.StartLoading(triggerAction.buttonTimer);
+                CmdPlayerStartedInteracting(torchId);
+                break;
+            case vTriggerGenericAction.InputType.GetTimerAction:
+                LoadingBarLogic.Instance.StartLoading(_triggerGenericAction.buttonTimer);
+                OnPlayerStartedInteracting?.Invoke(InstanceFinder.ClientManager.Connection);
+                CmdPlayerStartedInteracting();
+                break;
+            default:
+                break;
+        }
+    }
+
+    [ServerRpc(RequireOwnership = false)] public void CmdPlayerFinishedInteracting(int torchId, NetworkConnection conn = null)
+    {
+        Debug.Log($"{ClassName} Player finished interacting with {gameObject.name}.", gameObject);
+        InternalPlayerFinishedInteracting(torchId);
+    }
+
+    [ServerRpc(RequireOwnership = false)]
+    protected virtual void CmdPlayerStartedInteracting(NetworkConnection senderConn = null)
+    {
+        DebugLog($"{ClassName} Player {senderConn.ClientId} started interacting with {gameObject.name}.");
+        AllocateObjectInteractingAction(senderConn.ClientId);
+        PlayAudio(SoundSource.Type.Interacting);
+        OnPlayerStartedInteracting?.Invoke(senderConn);
+        var playerHero = GameplayManager.Instance.GetPlayerNob(senderConn);
+        _playerPositions[playerHero.ObjectId] = playerHero.transform.position;
+    }
+
+    [Server]
+    private void InternalPlayerFinishedInteracting(int torchId)
+    {
+        TorchStatusNetworked torchStatus = _torchesNetworked[torchId];
+        torchStatus.isOn = !_torchesNetworked[torchId].isOn;
+        _torchesNetworked[torchId] = torchStatus;
+        //OR _torchesNetworked.Dirty(torchId);
+    }
+
+    [ServerRpc(RequireOwnership = false)] public void CmdPlayerCanceledInteracting(int torchId, NetworkConnection conn = null)
+    {
+        LoadingBarLogic.Instance.CancelLoading();
+        DebugLog($"{ClassName} Player canceled interacting with {gameObject.name}.");
+        OnPlayerCanceledInteracting?.Invoke(InstanceFinder.ClientManager.Connection);
+        InternalStopAudio();
+        CmdPlayerCanceledInteracting();
+    }
+    
+    public TorchStatus GetTorchStatus(int torchId)
+    {
+        return _torches[torchId];
+    }
+    
+    private void _torchesNetworked_OnChange(SyncListOperation op, int index,
+        TorchStatusNetworked oldItem, TorchStatusNetworked newItem, bool asServer)
+    {   
+        
+        StringBuilder sb = new StringBuilder($"{ClassName} _torchesNetworked_OnChange asServer({asServer}) {op} {index} {oldItem} -> {newItem} ");
+        if (asServer)
+            return;
+        
+        
+        switch (op)
+        {
+            case SyncListOperation.Add:
+                break;
+            case SyncListOperation.RemoveAt:
+                break;
+            case SyncListOperation.Insert:
+                break;
+            case SyncListOperation.Set:
+                _torches[index].TorchController.DrawTorch(newItem.isOn);
+                break;
+            case SyncListOperation.Clear:
+                break;
+            case SyncListOperation.Complete:
+                break;
+        }
+        Debug.Log(sb.ToString());
+    }
+
+    [Serializable]
+    public class TorchStatus
+    {
+        public TorchControllerNoNetwork TorchController;
+        
+        public TorchStatus(TorchControllerNoNetwork torchController)
+        {
+            TorchController = torchController;
+        }
+    }
+
+    [Serializable]
+    public class TorchStatusNetworked
+    {
+        public int torchId;
+        public bool isOn;
+    }
+}
+ 
+
+// Assets\-ZombieRoyale\Scripts\InRoomSystems\Gameplay\TorchControllerNoNetwork.cs:
+ using System;
+using core.client.mechanics;
+using FishNet;
+using Invector.vCharacterController.vActions;
+using UnityEngine;
+
+public class TorchControllerNoNetwork : MonoBehaviour
+{
+    public int Id { get; private set; }
+    public TorchGlobalManager.TorchStatus TorchStatus { get; private set; }
+    public bool IsOn { get; private set; }
+    [SerializeField] private GameObject _lightFx;
+    [SerializeField] private VfxGraphController _vfxFire;
+    public vTriggerGenericAction TriggerGenericAction => _triggerGenericAction;
+    [SerializeField] protected vTriggerGenericAction _triggerGenericAction;
+    private AudioSource _audioSource;
+    public string ClassName => _className ??= StringToHexColor.GetColoredClassName(GetType());
+    protected string _className;
+
+    protected virtual void OnValidate()
+    {
+        AssignComponentsIfRequired();
+    }
+
+    private void OnEnable()
+    {
+        AddTimedActionListeners();
+    }
+
+    private void OnDisable()
+    {
+        RemoveTimedActionListeners();
+    }
+
+    protected virtual void Awake()
+    {
+        AssignComponentsIfRequired();
+    }
+        
+    protected void AssignComponentsIfRequired()
+    {  
+        _audioSource ??= GetComponentInChildren<AudioSource>();
+        if (_triggerGenericAction == null)
+            _triggerGenericAction = GetComponentInChildren<vTriggerGenericAction>();
+        if (_audioSource == null)
+            _audioSource = GetComponentInChildren<AudioSource>();
+    }
+    
+    public void SetId(int id)
+    {
+        Id = id;
+    }
+    
+    public void SetTorchStatus(TorchGlobalManager.TorchStatus torchStatus)
+    {
+        TorchStatus = torchStatus;
+    }
+    
+    public void SetIsOn(bool isOn)
+    {
+        IsOn = isOn;
+    }
+    
+    public void ToggleTorch()
+    {
+        IsOn = !IsOn;
+    }
+
+    public void DrawTorch(bool isOn)
+    {
+        _lightFx.SetActive(isOn);
+        _vfxFire.SetActive(isOn);
+    }
+    
+    protected void AddTimedActionListeners()
+    {
+        _triggerGenericAction.OnPressActionInput.AddListener(PlayerStartedInteracting);
+        _triggerGenericAction.OnFinishActionInput.AddListener(PlayerFinishedInteracting);
+        _triggerGenericAction.OnCancelActionInput.AddListener(PlayerCanceledInteracting);
+    }
+
+    protected void RemoveTimedActionListeners()
+    {
+        _triggerGenericAction.OnPressActionInput.RemoveAllListeners();
+        _triggerGenericAction.OnFinishActionInput.RemoveAllListeners();
+        _triggerGenericAction.OnCancelActionInput.RemoveAllListeners();
+    }
+
+    protected void PlayerStartedInteracting()
+    {
+        TorchGlobalManager.Instance.CmdPlayerStartedInteracting(Id);
+        switch (_triggerGenericAction.inputType)
+        {
+            case vTriggerGenericAction.InputType.GetButtonDown:
+                
+                break;
+            case vTriggerGenericAction.InputType.GetButtonTimer:
+                LoadingBarLogic.Instance.StartLoading(_triggerGenericAction.buttonTimer);
+                break;
+            case vTriggerGenericAction.InputType.GetTimerAction:
+                LoadingBarLogic.Instance.StartLoading(_triggerGenericAction.buttonTimer);
+                break;
+            default:
+                break;
+        }
+    }
+
+    protected virtual void PlayerFinishedInteracting()
+    {
+        TorchGlobalManager.Instance.CmdPlayerFinishedInteracting(Id);
+    }
+
+    protected void PlayerCanceledInteracting()
+    {
+        LoadingBarLogic.Instance.CancelLoading();
+        TorchGlobalManager.Instance.CmdPlayerCanceledInteracting(Id);
+    }
+}
+ 
+
+// Assets\-ZombieRoyale\Scripts\InRoomSystems\Gameplay\TorchControllerNoNetwork.cs:
+ using System;
+using core.client.mechanics;
+using FishNet;
+using Invector.vCharacterController.vActions;
+using UnityEngine;
+
+public class TorchControllerNoNetwork : MonoBehaviour
+{
+    public int Id { get; private set; }
+    public TorchGlobalManager.TorchStatus TorchStatus { get; private set; }
+    public bool IsOn { get; private set; }
+    [SerializeField] private GameObject _lightFx;
+    [SerializeField] private VfxGraphController _vfxFire;
+    public vTriggerGenericAction TriggerGenericAction => _triggerGenericAction;
+    [SerializeField] protected vTriggerGenericAction _triggerGenericAction;
+    private AudioSource _audioSource;
+    public string ClassName => _className ??= StringToHexColor.GetColoredClassName(GetType());
+    protected string _className;
+
+    protected virtual void OnValidate()
+    {
+        AssignComponentsIfRequired();
+    }
+
+    private void OnEnable()
+    {
+        AddTimedActionListeners();
+    }
+
+    private void OnDisable()
+    {
+        RemoveTimedActionListeners();
+    }
+
+    protected virtual void Awake()
+    {
+        AssignComponentsIfRequired();
+    }
+        
+    protected void AssignComponentsIfRequired()
+    {  
+        _audioSource ??= GetComponentInChildren<AudioSource>();
+        if (_triggerGenericAction == null)
+            _triggerGenericAction = GetComponentInChildren<vTriggerGenericAction>();
+        if (_audioSource == null)
+            _audioSource = GetComponentInChildren<AudioSource>();
+    }
+    
+    public void SetId(int id)
+    {
+        Id = id;
+    }
+    
+    public void SetTorchStatus(TorchGlobalManager.TorchStatus torchStatus)
+    {
+        TorchStatus = torchStatus;
+    }
+    
+    public void SetIsOn(bool isOn)
+    {
+        IsOn = isOn;
+    }
+    
+    public void ToggleTorch()
+    {
+        IsOn = !IsOn;
+    }
+
+    public void DrawTorch(bool isOn)
+    {
+        _lightFx.SetActive(isOn);
+        _vfxFire.SetActive(isOn);
+    }
+    
+    protected void AddTimedActionListeners()
+    {
+        _triggerGenericAction.OnPressActionInput.AddListener(PlayerStartedInteracting);
+        _triggerGenericAction.OnFinishActionInput.AddListener(PlayerFinishedInteracting);
+        _triggerGenericAction.OnCancelActionInput.AddListener(PlayerCanceledInteracting);
+    }
+
+    protected void RemoveTimedActionListeners()
+    {
+        _triggerGenericAction.OnPressActionInput.RemoveAllListeners();
+        _triggerGenericAction.OnFinishActionInput.RemoveAllListeners();
+        _triggerGenericAction.OnCancelActionInput.RemoveAllListeners();
+    }
+
+    protected void PlayerStartedInteracting()
+    {
+        TorchGlobalManager.Instance.CmdPlayerStartedInteracting(Id);
+        switch (_triggerGenericAction.inputType)
+        {
+            case vTriggerGenericAction.InputType.GetButtonDown:
+                
+                break;
+            case vTriggerGenericAction.InputType.GetButtonTimer:
+                LoadingBarLogic.Instance.StartLoading(_triggerGenericAction.buttonTimer);
+                break;
+            case vTriggerGenericAction.InputType.GetTimerAction:
+                LoadingBarLogic.Instance.StartLoading(_triggerGenericAction.buttonTimer);
+                break;
+            default:
+                break;
+        }
+    }
+
+    protected virtual void PlayerFinishedInteracting()
+    {
+        TorchGlobalManager.Instance.CmdPlayerFinishedInteracting(Id);
+    }
+
+    protected void PlayerCanceledInteracting()
+    {
+        LoadingBarLogic.Instance.CancelLoading();
+        TorchGlobalManager.Instance.CmdPlayerCanceledInteracting(Id);
+    }
+}
+ 
+
+// Assets\-ZombieRoyale\Scripts\InRoomSystems\Gameplay\InteractableObjectController.cs:
+ using System;
+using System.Collections;
+using System.Collections.Generic;
+using DG.Tweening;
+using FishNet.Connection;
+using FishNet.Object;
+using FishNet.Object.Synchronizing;
+using UnityEngine;
+using DungeonScrollerCore;
+using FishNet;
+using FishNet.Observing;
+using Invector.vCharacterController.vActions;
+using NGS.AdvancedCullingSystem.Dynamic;
+
+namespace _ZombieRoyale.Scripts.Core
+
+{
+    [RequireComponent(typeof(NetworkObserver))]
+    public class InteractableObjectController : NetworkBehaviour { 
+        [SyncVar(OnChange = nameof(OnObjectRotationChanged))]
+        protected Vector3 _objectRotation = Vector3.zero;
+
+        protected Dictionary<int, ObjectAction> _playerInteractingCoroutines = new ();
+        [SerializeField] protected GameplayManager _gameplayManager;
+        [SerializeField] protected SoundSource[] _soundSources = new SoundSource[0];
+        [SerializeField] protected GameObjectDispatcher _visualModel;
+        [SerializeField] protected AudioSource _audioSource;
+        [SerializeField] protected GameObject vOpenActionText;
+        protected bool _isStartingRotationNotSet = true;
+        protected Vector3 _startingRotation = Vector3.zero;
+        protected string _tag;
+        
+        protected Dictionary<int, Vector3> _playerPositions = new Dictionary<int, Vector3>();
+        [SerializeField] public float OBJECT_ROTATION_DURATION = 1f;
+        
+        public Action<NetworkConnection> OnLocalPlayerFinishedInteracting;
+        public Action<NetworkConnection> OnPlayerFinishedInteracting;
+        public Action<NetworkConnection> OnPlayerStartedInteracting;
+        public Action<NetworkConnection> OnPlayerCanceledInteracting;
+        public Action<NetworkConnection> OnPlayerActivatedObject;
+
+        public Action OnInitialized;
+        
+        [SerializeField] protected bool _isDebug = true;
+        [SerializeField] protected vTriggerGenericAction _triggerGenericAction;
+
+        public static ObjectsRoomManager ObjectsRoomManager;
+        [SerializeField] protected MeshRenderer[] _meshRenderers;
+        public string ClassName => _className ??= StringToHexColor.GetColoredClassName(GetType());
+        protected string _className;
+    
+        protected virtual void OnValidate()
+        {
+            AssignComponentsIfRequired();
+        }
+
+        protected virtual void Awake()
+        {
+            AssignComponentsIfRequired();
+        }
+        
+        protected void AssignComponentsIfRequired()
+        {
+            if (_meshRenderers ==null || _meshRenderers.Length == 0)
+            {
+                _meshRenderers = GetComponentsInChildren<MeshRenderer>();
+            }
+            
+            _audioSource ??= GetComponentInChildren<AudioSource>();
+            if (_triggerGenericAction == null)
+                _triggerGenericAction = GetComponentInChildren<vTriggerGenericAction>();
+            if (_audioSource == null)
+                _audioSource = GetComponentInChildren<AudioSource>();
+        }
+
+        protected virtual void InitClient()
+        {
+            TurnOnClientOnlyComponents();
+            AddTimedActionListeners();
+            DebugWrite.Log($"{ClassName} {gameObject.name} transform.rotation {transform.rotation.eulerAngles}, _objectRotation {_objectRotation}", gameObject, _isDebug);
+            
+            if (transform.rotation.eulerAngles != _objectRotation)
+            {
+                SetObjectRotation(transform, _objectRotation);
+            }
+            
+            _gameplayManager = GameplayManager.LocalPlayer;
+            gameObject.name = $"{tag} #{NetworkObject.ObjectId}";
+#if UNITY_EDITOR
+            if (ObjectsRoomManager == null)
+                ObjectsRoomManager = FindObjectOfType<ObjectsRoomManager>();
+            transform.parent = ObjectsRoomManager.transform;
+#endif
+            for (int i = 0; i < _meshRenderers.Length; i++)
+            {
+                DC_Controller.Instance.AddObjectForCulling(_meshRenderers[i]);
+            }
+        }
+        
+        public override void OnStartClient()
+        {
+            base.OnStartClient();
+            InitClient();
+        }
+
+        protected void TurnOnClientOnlyComponents()
+        {
+            _triggerGenericAction.gameObject.SetActive(true);
+            if (_audioSource != null)
+            {
+                _audioSource.gameObject.SetActive(true);
+            }
+            else
+            {
+                if (_soundSources.Length > 0)
+                    Debug.LogError($"{ClassName} _audioSource is null for {gameObject.name}");
+            }
+            if (_visualModel != null)
+                _visualModel.Activate();
+        }
+
+        public override void OnStartServer()
+        {
+            base.OnStartServer();
+            SetupName();
+        }
+
+        private void OnDisable()
+        {
+            //DebugLog($"{ClassName} OnDisable() called for {gameObject.name}");
+        }
+
+        public override void OnStopClient()
+        {
+            base.OnStopClient();
+            RemoveTimedActionListeners();
+        }
+
+        protected void AddTimedActionListeners()
+        {
+            _triggerGenericAction.OnPressActionInput.AddListener(PlayerStartedInteracting);
+            _triggerGenericAction.OnFinishActionInput.AddListener(PlayerFinishedInteracting);
+            _triggerGenericAction.OnCancelActionInput.AddListener(PlayerCanceledInteracting);
+        }
+
+        protected void RemoveTimedActionListeners()
+        {
+            _triggerGenericAction.OnPressActionInput.RemoveAllListeners();
+            _triggerGenericAction.OnFinishActionInput.RemoveAllListeners();
+            _triggerGenericAction.OnCancelActionInput.RemoveAllListeners();
+        }
+
+        protected void PlayerStartedInteracting()
+        {
+            DebugLog($"{ClassName} Player started interacting with {gameObject.name}.");
+            switch (_triggerGenericAction.inputType)
+            {
+                case vTriggerGenericAction.InputType.GetButtonDown:
+                    PlayerFinishedInteracting();
+                    break;
+                case vTriggerGenericAction.InputType.GetButtonTimer:
+                    LoadingBarLogic.Instance.StartLoading(_triggerGenericAction.buttonTimer);
+                    OnPlayerStartedInteracting?.Invoke(InstanceFinder.ClientManager.Connection);
+                    CmdPlayerStartedInteracting();
+                    break;
+                case vTriggerGenericAction.InputType.GetTimerAction:
+                    LoadingBarLogic.Instance.StartLoading(_triggerGenericAction.buttonTimer);
+                    OnPlayerStartedInteracting?.Invoke(InstanceFinder.ClientManager.Connection);
+                    CmdPlayerStartedInteracting();
+                    break;
+                default:
+                    break;
+            }
+        }
+
+        protected virtual void PlayerFinishedInteracting()
+        {
+            DebugLog($"{ClassName} Player finished interacting with {gameObject.name}.");
+            OnLocalPlayerFinishedInteracting?.Invoke(InstanceFinder.ClientManager.Connection);
+            CmdPlayerFinishedInteracting();
+        }
+
+        protected void PlayerCanceledInteracting()
+        {
+            LoadingBarLogic.Instance.CancelLoading();
+            DebugLog($"{ClassName} Player canceled interacting with {gameObject.name}.");
+            OnPlayerCanceledInteracting?.Invoke(InstanceFinder.ClientManager.Connection);
+            InternalStopAudio();
+            CmdPlayerCanceledInteracting();
+        }
+
+        [ServerRpc(RequireOwnership = false)]
+        protected virtual void CmdPlayerStartedInteracting(NetworkConnection senderConn = null)
+        {
+            DebugLog($"{ClassName} Player {senderConn.ClientId} started interacting with {gameObject.name}.");
+            AllocateObjectInteractingAction(senderConn.ClientId);
+            PlayAudio(SoundSource.Type.Interacting);
+            OnPlayerStartedInteracting?.Invoke(senderConn);
+            var playerHero = GameplayManager.Instance.GetPlayerNob(senderConn);
+            _playerPositions[playerHero.ObjectId] = playerHero.transform.position;
+        }
+
+        [ServerRpc(RequireOwnership = false)]
+        protected void CmdPlayerFinishedInteracting(NetworkConnection senderConn = null)
+        {
+            int clientId = senderConn.ClientId;
+            DebugLog($"{ClassName}[Server] Player {clientId} finished interacting with {gameObject.name}.");
+
+            if (_triggerGenericAction.inputType == vTriggerGenericAction.InputType.GetButtonTimer)
+            {
+                if (_playerInteractingCoroutines.ContainsKey(clientId))
+                {
+                    if (_playerInteractingCoroutines[clientId].IsEligibleToInteract)
+                    {
+                        DebugLog($"{ClassName} Player {clientId} finished interacting with {gameObject.name} and was eligible to do so.");
+                        OnPlayerFinishedInteracting?.Invoke(senderConn);
+                    }
+                    else
+                    {
+                        DeallocateObjectInteractingAction(clientId);
+                        DebugLog($"{ClassName} Player {clientId} raised finishing of interacting with {gameObject.name}, but was not eligible to do so.");
+                    }
+                }
+                else
+                {
+                    DebugLog($"{ClassName} Player {clientId} raised finishing of interacting with {gameObject.name}, but no coroutine was found.");
+                    return;
+                }
+            }
+            else {
+                DebugLog($"{ClassName} Player {clientId} finished interacting with {gameObject.name} and was eligible to do so.");
+                OnPlayerFinishedInteracting?.Invoke(senderConn);
+            }
+            var playerHero = GameplayManager.Instance.GetPlayerNob(senderConn);
+            RemoveUnitPosFromDict(playerHero);
+        }
+
+        [ServerRpc(RequireOwnership = false)]
+        protected void CmdPlayerCanceledInteracting(NetworkConnection senderConn = null)
+        {
+            DebugLog($"{ClassName} Player {senderConn.ClientId} canceled interacting with {gameObject.name}.");
+            DeallocateObjectInteractingAction(senderConn.ClientId);
+            foreach (NetworkConnection observer in NetworkObject.Observers)
+            {
+                if (observer == senderConn)
+                    continue;
+                TargetsStopAudio(observer);
+            }
+            OnPlayerCanceledInteracting?.Invoke(senderConn);
+            var playerHero = GameplayManager.Instance.GetPlayerNob(senderConn);
+            RemoveUnitPosFromDict(playerHero);
+        }
+
+        [Server]
+        protected void AllocateObjectInteractingAction(int clientId)
+        {
+            if (_playerInteractingCoroutines.ContainsKey(clientId))
+            {
+                DeallocateObjectInteractingAction(clientId);
+            }
+
+            ObjectAction objectAction = new ObjectAction(StartCoroutine(ObjectInteractingEligibilitySwither(clientId)));
+            _playerInteractingCoroutines.Add(clientId, objectAction);
+        }
+
+        [Server]
+        protected void DeallocateObjectInteractingAction(int clientId)
+        {
+            if (_playerInteractingCoroutines.ContainsKey(clientId))
+            {
+                Coroutine coroutine = _playerInteractingCoroutines[clientId].ActionCoroutine;
+                _playerInteractingCoroutines.Remove(clientId);
+                StopCoroutine(coroutine);
+            }
+        }
+
+        [Server]
+        protected IEnumerator ObjectInteractingEligibilitySwither(int clientId)
+        {
+            yield return new WaitForSeconds(_triggerGenericAction.buttonTimer * .85f);
+            _playerInteractingCoroutines[clientId].IsEligibleToInteract = true;
+            yield return new WaitForSeconds(1f);
+            DeallocateObjectInteractingAction(clientId);
+        }
+
+        public static void SetObjectRotation(Transform which, Vector3 angle)
+        {
+            //DebugWrite.Log($"{ClassName} SetObjectRotation() called for {gameObject.name} with angle {angle}", gameObject, _isDebug);
+            which.localRotation = Quaternion.Euler(angle);
+        }
+
+        protected virtual void OnObjectRotationChanged(Vector3 prev, Vector3 next, bool asServer)
+        {
+            DebugWrite.Log($"{ClassName} OnObjectRotationChanged() called for {gameObject.name} with angle {next} _isStartingRotationNotSet {_isStartingRotationNotSet}", gameObject, _isDebug);
+            if (_isStartingRotationNotSet)
+            {
+                _startingRotation = next;
+                _isStartingRotationNotSet = false;
+            }
+
+            if (asServer)
+            {
+                SetObjectRotation(transform, next);
+            }
+            else
+            {
+                StartCoroutine(RotateObject(transform, prev, next));
+            }
+        }
+
+        public static void RotateObject(Transform trans, Quaternion prev, Quaternion next, float time, Ease ease = Ease.OutSine)
+        {
+            DOTween.Init();
+            
+            // Reset the rotation to the previous value before starting the tween
+            trans.rotation = prev;
+            
+            // Start a new tween to rotate the object to the next value
+            trans.DORotateQuaternion(next, time)
+                .SetEase(ease);
+        }
+
+        public static void RotateObject(Transform trans, Vector3 prev, Vector3 next, float time, Ease ease = Ease.OutSine)
+        {
+            DOTween.Init();
+
+            // Reset the rotation to the previous value before starting the tween
+            trans.rotation = Quaternion.Euler(prev);
+
+            // Start a new tween to rotate the object to the next value
+            trans.DORotate(next, time, RotateMode.FastBeyond360)
+                .SetEase(ease);
+        }
+
+        public IEnumerator RotateObject(Transform trans, Vector3 prev, Vector3 next)
+        {
+            float elapsedTime = 0f;
+            if (prev != next)
+            {
+                DebugWrite.Log($"{ClassName} RotateObject() called for {gameObject.name} {prev} -> {next}", gameObject, _isDebug);
+            }
+            while (elapsedTime < OBJECT_ROTATION_DURATION)
+            {
+                elapsedTime += Time.deltaTime;
+                float t = elapsedTime / OBJECT_ROTATION_DURATION;
+                //lerp angle between prev and next
+                var angle = Vector3.Lerp(prev, next, t);
+                SetObjectRotation(trans, angle);
+                prev = angle;
+                yield return null;
+            }
+        }
+
+        [Server]
+        public virtual void InitServer(GameplayManager gpm, string tag, Vector3 pos, Vector3 rot, float newTime = 0f, bool overrideTime = false)
+        {
+            _tag = tag;
+            _objectRotation = rot;
+            _gameplayManager = gpm;
+            Debug.Log($"{ClassName} {_tag} {gameObject.name} initialized. _objectRotation: {_objectRotation}", gameObject);
+            if (_gameplayManager == null)
+            {
+                DebugWrite.Log($"{ClassName} GameplayManager is null.", gameObject, _isDebug);
+            }
+            SetupName();
+            ObserversPlaceObject(pos, rot);
+            if (overrideTime)
+            {
+                if (!Mathf.Approximately(_triggerGenericAction.buttonTimer, newTime))
+                {
+                    _triggerGenericAction.buttonTimer = newTime;
+                    ObserversUpdateTime(newTime);
+                }
+            }
+            OnInitialized?.Invoke();
+        }
+
+        [ObserversRpc]
+        protected void ObserversPlaceObject(Vector3 pos, Vector3 rot)
+        {
+            DebugWrite.Log($"{ClassName} Object {gameObject.name} placed.", gameObject,_isDebug);
+            transform.position = pos;
+            SetObjectRotation(transform, rot);
+        }
+        
+        [ObserversRpc(RunLocally = true)]
+        protected void ObserversUpdateTime(float newTime)
+        {
+            DebugWrite.Log($"{ClassName} Object {gameObject.name} updated time to {newTime}.", gameObject,_isDebug);
+            _triggerGenericAction.buttonTimer = newTime;
+            if (newTime < Mathf.Epsilon) {
+                _triggerGenericAction.inputType = vTriggerGenericAction.InputType.GetButtonDown;
+            }
+        }
+
+        protected virtual void SetupName()
+        {
+            gameObject.name = $"{_tag} #{NetworkObject.ObjectId}";
+        }
+
+        public class ObjectAction
+        {
+            public Coroutine ActionCoroutine;
+            public bool IsEligibleToInteract;
+
+            public ObjectAction(Coroutine actionCoroutine)
+            {
+                ActionCoroutine = actionCoroutine;
+                IsEligibleToInteract = false;
+            }
+        }
+        
+        [ObserversRpc]
+        protected void PlayAudio(SoundSource.Type whichType)
+        {
+            InternalPlayAudio(whichType);
+        }
+
+        protected void InternalPlayAudio(SoundSource.Type whichType)
+        {
+            SoundSource soundSource = null;
+            for (int i = 0; i < _soundSources.Length; i++)
+            {
+                if (_soundSources[i].TypeOfSound == whichType)
+                {
+                    soundSource = _soundSources[i];
+                    break;
+                }
+            }
+
+            if (_audioSource == null)
+            {
+                return;
+            }
+            
+            if (soundSource != null)
+            {
+                _audioSource.volume = soundSource.Volume;
+                if (soundSource.IsLooping)
+                {
+                    _audioSource.clip = soundSource.Clip;
+                    _audioSource.loop = true;
+                    _audioSource.Play();
+                }else
+                {
+                    _audioSource.PlayOneShot(soundSource.Clip);
+                }
+            }
+        }
+        
+        [TargetRpc]
+        protected void TargetsStopAudio(NetworkConnection conn)
+        {
+            //DebugLog($"{ClassName} StopAudio() called for {gameObject.name}");
+            InternalStopAudio();
+        }
+
+        protected void InternalStopAudio()
+        {
+            //Debug.Log($"{ClassName} InternalStopAudio() called for {gameObject.name}");
+            if (_audioSource == null)
+                return;
+            
+            if (_audioSource.clip != null)
+                _audioSource.Stop();
+        }
+
+        protected void DebugLog(string message)
+        {
+            DebugWrite.Log(message, gameObject, _isDebug);
+        }
+
+        public virtual void ShowOpenActionText() => vOpenActionText.SetActive(true);
+
+        public virtual void HideOpenActionText() => vOpenActionText.SetActive(false);
+
+        protected void RemoveUnitPosFromDict(NetworkObject playerHero)
+        {
+            if (_playerPositions.ContainsKey(playerHero.ObjectId))
+            {
+                _playerPositions.Remove(playerHero.ObjectId);
+            }
+        }
+        
+        [Serializable]
+        public class SoundSource
+        {
+            public AudioClip Clip;
+            [Range(0f, 1f)]
+            public float Volume = 1f;
+            public bool IsLooping;
+            public Type TypeOfSound;
+            
+            public enum Type {Interacting, Activated, Deactivated}
+        }
+    }
+} 
+
+// Assets\-ZombieRoyale\Scripts\InRoomSystems\Gameplay\TorchController.cs:
+ using FishNet.Connection;
+using FishNet.Object;
+using FishNet.Object.Synchronizing;
+using NGS.AdvancedCullingSystem.Dynamic;
+using UnityEngine;
+using core.client.mechanics;
+
+namespace _ZombieRoyale.Scripts.Core
+
+{
+    public class TorchController : InteractableObjectController
+    {
+        [SyncVar(OnChange = nameof(OnLightSwitched))] protected bool _isLightOn = true;
+        [SerializeField] private GameObject _lightFx;
+        [SerializeField] private VfxGraphController _vfxFire;
+        
+        public override void OnStartServer()
+        {
+            base.OnStartServer();
+            OnPlayerFinishedInteracting += SwitchLight;
+        }
+
+        public override void OnStartClient()
+        {
+            base.OnStartClient();
+            InternalPlayAudio(SoundSource.Type.Activated);
+            _lightFx.SetActive(true);
+            //TODO implement this feature
+            //DC_Controller.Instance.AddObjectForCulling(_vfxFire);
+            //Debug.Log($"[TorchController] Activate go {_lightFx}");
+        }
+
+        [Server]
+        private void SwitchLight(NetworkConnection conn)
+        {
+            _isLightOn = !_isLightOn;
+            if (_isLightOn)
+            {
+                PlayAudio(SoundSource.Type.Activated);
+            }
+        }
+        
+        protected void OnLightSwitched(bool prev, bool next, bool asServer)
+        {
+            if (IsHost || !asServer)
+            {
+                SwitchLight(next);
+            }
+        }
+
+        private void SwitchLight(bool isOn)
+        {
+            Debug.Log($"[TorchController] SwitchLight {gameObject} {isOn}", gameObject);
+            _isLightOn = isOn;
+            _lightFx.SetActive(isOn);
+        }
+    }
+} 
+
+// Assets\FishNet\Runtime\Object\NetworkBehaviour.cs:
+ using FishNet.Documenting;
+using FishNet.Managing.Transporting;
+using FishNet.Serializing.Helping;
+using FishNet.Utility.Constant;
+using System.Runtime.CompilerServices;
+using UnityEngine;
+
+[assembly: InternalsVisibleTo(UtilityConstants.CODEGEN_ASSEMBLY_NAME)]
+namespace FishNet.Object
+{
+    /// <summary>
+    /// Scripts which inherit from NetworkBehaviour can be used to gain insight of, and perform actions on the network.
+    /// </summary>
+    public abstract partial class NetworkBehaviour : MonoBehaviour
+    {
+        #region Public.
+        /// <summary>
+        /// True if this NetworkBehaviour is initialized for the network.
+        /// </summary>
+        public bool IsSpawned => _networkObjectCache.IsSpawned;
+        /// <summary>
+        /// 
+        /// </summary>
+        [SerializeField, HideInInspector]
+        private byte _componentIndexCache = byte.MaxValue;
+        /// <summary>
+        /// ComponentIndex for this NetworkBehaviour.
+        /// </summary>
+        public byte ComponentIndex
+        {
+            get => _componentIndexCache;
+            private set => _componentIndexCache = value;
+        }
+#if UNITY_EDITOR
+        /// <summary>
+        /// NetworkObject automatically added or discovered during edit time.
+        /// </summary>
+        [SerializeField, HideInInspector]
+        private NetworkObject _addedNetworkObject;
+#endif 
+        /// <summary>
+        /// Cache of the TransportManager.
+        /// </summary>
+        private TransportManager _transportManagerCache;
+        /// <summary>
+        /// 
+        /// </summary>
+        [SerializeField, HideInInspector]
+        private NetworkObject _networkObjectCache;
+        /// <summary>
+        /// NetworkObject this behaviour is for.
+        /// </summary>
+        public NetworkObject NetworkObject => _networkObjectCache;
+        #endregion
+
+        #region Private.
+        /// <summary>
+        /// True if initialized at some point asServer.
+        /// </summary>
+        private bool _initializedOnceServer;
+#pragma warning disable CS0414
+        /// <summary>
+        /// True if initialized at some point not asServer.
+        /// </summary>
+        private bool _initializedOnceClient;
+#pragma warning restore CS0414
+        #endregion
+
+        /// <summary>
+        /// Outputs data about this NetworkBehaviour to string.
+        /// </summary>
+        /// <returns></returns>
+        public override string ToString()
+        {
+            return $"Name [{gameObject.name}] ComponentId [{ComponentIndex}] NetworkObject Name [{_networkObjectCache.name}] NetworkObject Id [{_networkObjectCache.ObjectId}]";
+        }
+
+
+        /// <summary>
+        /// Preinitializes this script for the network.
+        /// </summary>
+        internal void Preinitialize_Internal(NetworkObject nob, bool asServer)
+        {
+            _transportManagerCache = nob.TransportManager;
+
+            InitializeOnceSyncTypes(asServer);
+            if (asServer)
+            {                
+                InitializeRpcLinks();
+                _initializedOnceServer = true;
+            }
+            else
+            {
+                _initializedOnceClient = true;
+            }
+        }
+
+        internal void Deinitialize(bool asServer)
+        {
+
+        }
+
+        /// <summary>
+        /// Serializes information for network components.
+        /// </summary>
+        internal void SerializeComponents(NetworkObject nob, byte componentIndex)
+        {
+            _networkObjectCache = nob;
+            ComponentIndex = componentIndex;
+        }
+
+        /// <summary>
+        /// Manually initializes network content for the NetworkBehaviour if the object it's on is disabled.
+        /// </summary>
+        internal void InitializeIfDisabled()
+        {
+            if (gameObject.activeInHierarchy)
+                return;
+
+            NetworkInitializeIfDisabled();
+        }
+        /// <summary>
+        /// Long name is to prevent users from potentially creating their own method named the same.
+        /// </summary>
+        [CodegenMakePublic]
+        [APIExclude]
+        internal virtual void NetworkInitializeIfDisabled() { }
+
+        #region Editor.
+        protected virtual void Reset()
+        {
+#if UNITY_EDITOR
+            if (Application.isPlaying)
+                return;
+
+            TryAddNetworkObject();
+#endif
+        }
+
+        protected virtual void OnValidate()
+        {
+#if UNITY_EDITOR
+            if (Application.isPlaying)
+                return;
+
+            TryAddNetworkObject();
+#endif
+        }
+
+        /// <summary>
+        /// Resets this NetworkBehaviour so that it may be added to an object pool.
+        /// </summary>
+        internal void ResetState()
+        {
+            SyncTypes_ResetState();
+            ClearReplicateCache();
+            ClearBuffedRpcs();
+        }
+
+
+        /// <summary>
+        /// Tries to add the NetworkObject component.
+        /// </summary>
+        private NetworkObject TryAddNetworkObject()
+        {
+#if UNITY_EDITOR
+            if (Application.isPlaying)
+                return _addedNetworkObject;
+
+            if (_addedNetworkObject != null)
+            {
+                AlertToDuplicateNetworkObjects(_addedNetworkObject.transform);
+                return _addedNetworkObject;
+            }
+
+            /* Manually iterate up the chain because GetComponentInParent doesn't
+             * work when modifying prefabs in the inspector. Unity, you're starting
+             * to suck a lot right now. */
+            NetworkObject result = null;
+            Transform climb = transform;
+
+            while (climb != null)
+            {
+                if (climb.TryGetComponent<NetworkObject>(out result))
+                    break;
+                else
+                    climb = climb.parent;
+            }
+
+            if (result != null)
+            {
+                _addedNetworkObject = result;
+            }
+            //Not found, add a new nob.
+            else
+            {
+                _addedNetworkObject = transform.root.gameObject.AddComponent<NetworkObject>();
+                Debug.Log($"Script {GetType().Name} on object {gameObject.name} added a NetworkObject component to {transform.root.name}.");
+            }
+
+            AlertToDuplicateNetworkObjects(_addedNetworkObject.transform);
+            return _addedNetworkObject;
+
+            //Removes duplicate network objects from t.
+            void AlertToDuplicateNetworkObjects(Transform t)
+            {
+                NetworkObject[] nobs = t.GetComponents<NetworkObject>();
+                //This shouldn't be possible but does occur sometimes; maybe a unity bug?
+                if (nobs.Length > 1)
+                {
+                    //Update added to first entryt.
+                    _addedNetworkObject = nobs[0];
+
+                    string useMenu = " You may also use the Fish-Networking menu to automatically remove duplicate NetworkObjects.";
+                    string sceneName = t.gameObject.scene.name;
+                    if (string.IsNullOrEmpty(sceneName))
+                        Debug.LogError($"Prefab {t.name} has multiple NetworkObject components. Please remove the extra component(s) to prevent errors.{useMenu}");
+                    else
+                        Debug.LogError($"Object {t.name} in scene {sceneName} has multiple NetworkObject components. Please remove the extra component(s) to prevent errors.{useMenu}");
+                }
+
+            }
+#else
+            return null;
+#endif
+        }
+
+        #endregion
+    }
+
+
+} 
+
+// Assets\FishNet\Runtime\Object\Synchronizing\SyncList.cs:
+ #if FISHNET_RELEASE_MODE
+using FishNet.Documenting;
+using FishNet.Managing.Logging;
+using FishNet.Object.Synchronizing.Internal;
+using FishNet.Serializing;
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.Runtime.CompilerServices;
+using UnityEngine;
+
+namespace FishNet.Object.Synchronizing
+{
+
+    public class SyncList<T> : SyncBase, IList<T>, IReadOnlyList<T>
+    {
+        #region Types.
+        /// <summary>
+        /// Information needed to invoke a callback.
+        /// </summary>
+        private struct CachedOnChange
+        {
+            internal readonly SyncListOperation Operation;
+            internal readonly int Index;
+            internal readonly T Previous;
+            internal readonly T Next;
+
+            public CachedOnChange(SyncListOperation operation, int index, T previous, T next)
+            {
+                Operation = operation;
+                Index = index;
+                Previous = previous;
+                Next = next;
+            }
+        }
+
+        /// <summary>
+        /// Information about how the collection has changed.
+        /// </summary>
+        private struct ChangeData
+        {
+            internal readonly SyncListOperation Operation;
+            internal readonly int Index;
+            internal readonly T Item;
+
+            public ChangeData(SyncListOperation operation, int index, T item)
+            {
+                Operation = operation;
+                Index = index;
+                Item = item;
+            }
+        }
+
+        /// <summary>
+        /// Custom enumerator to prevent garbage collection.
+        /// </summary>
+        [APIExclude]
+        public struct Enumerator : IEnumerator<T>
+        {
+            public T Current { get; private set; }
+            private readonly SyncList<T> _list;
+            private int _index;
+
+            public Enumerator(SyncList<T> list)
+            {
+                this._list = list;
+                _index = -1;
+                Current = default;
+            }
+
+            public bool MoveNext()
+            {
+                _index++;
+                if (_index >= _list.Count)
+                    return false;
+                Current = _list[_index];
+                return true;
+            }
+
+            public void Reset() => _index = -1;
+            object IEnumerator.Current => Current;
+            public void Dispose() { }
+        }
+        #endregion
+
+        #region Public.
+        /// <summary>
+        /// Implementation from List<T>. Not used.
+        /// </summary>
+        [APIExclude]
+        public bool IsReadOnly => false;
+        /// <summary>
+        /// Delegate signature for when SyncList changes.
+        /// </summary>
+        /// <param name="op"></param>
+        /// <param name="index"></param>
+        /// <param name="oldItem"></param>
+        /// <param name="newItem"></param>
+        [APIExclude]
+        public delegate void SyncListChanged(SyncListOperation op, int index, T oldItem, T newItem, bool asServer);
+        /// <summary>
+        /// Called when the SyncList changes.
+        /// </summary>
+        public event SyncListChanged OnChange;
+        /// <summary>
+        /// Collection of objects.
+        /// </summary>
+        public readonly IList<T> Collection;
+        /// <summary>
+        /// Copy of objects on client portion when acting as a host.
+        /// </summary>
+        public readonly IList<T> ClientHostCollection = new List<T>();
+        /// <summary>
+        /// Number of objects in the collection.
+        /// </summary>
+        public int Count => Collection.Count;
+        #endregion
+
+        #region Private.        
+        /// <summary>
+        /// Values upon initialization.
+        /// </summary>
+        private IList<T> _initialValues = new List<T>();
+        /// <summary>
+        /// Comparer to see if entries change when calling public methods.
+        /// </summary>
+        private readonly IEqualityComparer<T> _comparer;
+        /// <summary>
+        /// Changed data which will be sent next tick.
+        /// </summary>
+        private readonly List<ChangeData> _changed = new List<ChangeData>();
+        /// <summary>
+        /// Server OnChange events waiting for start callbacks.
+        /// </summary>
+        private readonly List<CachedOnChange> _serverOnChanges = new List<CachedOnChange>();
+        /// <summary>
+        /// Client OnChange events waiting for start callbacks.
+        /// </summary>
+        private readonly List<CachedOnChange> _clientOnChanges = new List<CachedOnChange>();
+        /// <summary>
+        /// True if values have changed since initialization.
+        /// The only reasonable way to reset this during a Reset call is by duplicating the original list and setting all values to it on reset.
+        /// </summary>
+        private bool _valuesChanged;
+        /// <summary>
+        /// True to send all values in the next WriteDelta.
+        /// </summary>
+        private bool _sendAll;
+        #endregion
+
+        [APIExclude]
+        public SyncList() : this(new List<T>(), EqualityComparer<T>.Default) { }
+        [APIExclude]
+        public SyncList(IEqualityComparer<T> comparer) : this(new List<T>(), (comparer == null) ? EqualityComparer<T>.Default : comparer) { }
+        [APIExclude]
+        public SyncList(IList<T> collection, IEqualityComparer<T> comparer = null)
+        {
+            this._comparer = (comparer == null) ? EqualityComparer<T>.Default : comparer;
+            this.Collection = collection;
+            //Add each in collection to clienthostcollection.
+            foreach (T item in collection)
+                this.ClientHostCollection.Add(item);
+        }
+
+        /// <summary>
+        /// Called when the SyncType has been registered, but not yet initialized over the network.
+        /// </summary>
+        protected override void Registered()
+        {
+            base.Registered();
+            foreach (T item in Collection)
+                _initialValues.Add(item);
+        }
+
+        /// <summary>
+        /// Gets the collection being used within this SyncList.
+        /// </summary>
+        /// <param name="asServer">True if returning the server value, false if client value. The values will only differ when running as host. While asServer is true the most current values on server will be returned, and while false the latest values received by client will be returned.</param>
+        /// <returns></returns>
+        public List<T> GetCollection(bool asServer)
+        {
+            bool asClientAndHost = (!asServer && base.NetworkManager.IsServer);
+            IList<T> collection = (asClientAndHost) ? ClientHostCollection : Collection;
+            return (collection as List<T>);
+        }
+
+        /// <summary>
+        /// Adds an operation and invokes locally.
+        /// </summary>
+        /// <param name="operation"></param>
+        /// <param name="index"></param>
+        /// <param name="prev"></param>
+        /// <param name="next"></param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void AddOperation(SyncListOperation operation, int index, T prev, T next)
+        {
+            if (!base.IsRegistered)
+                return;
+
+            /* asServer might be true if the client is setting the value
+            * through user code. Typically synctypes can only be set
+            * by the server, that's why it is assumed asServer via user code.
+            * However, when excluding owner for the synctype the client should
+            * have permission to update the value locally for use with
+            * prediction. */
+            bool asServerInvoke = (!base.IsNetworkInitialized || base.NetworkBehaviour.IsServer);
+
+            /* Only the adds asServer may set
+             * this synctype as dirty and add
+             * to pending changes. However, the event may still
+             * invoke for clientside. */
+            if (asServerInvoke)
+            {
+                /* Set as changed even if cannot dirty.
+                * Dirty is only set when there are observers,
+                * but even if there are not observers
+                * values must be marked as changed so when
+                * there are observers, new values are sent. */
+                _valuesChanged = true;
+
+                /* If unable to dirty then do not add to changed.
+                 * A dirty may fail if the server is not started
+                 * or if there's no observers. Changed doesn't need
+                 * to be populated in this situations because clients
+                 * will get the full collection on spawn. If we
+                 * were to also add to changed clients would get the full
+                 * collection as well the changed, which would double results. */
+                if (base.Dirty())
+                {
+                    ChangeData change = new ChangeData(operation, index, next);
+                    _changed.Add(change);
+                }
+            }
+
+            InvokeOnChange(operation, index, prev, next, asServerInvoke);
+        }
+
+        /// <summary>
+        /// Called after OnStartXXXX has occurred.
+        /// </summary>
+        /// <param name="asServer">True if OnStartServer was called, false if OnStartClient.</param>
+        public override void OnStartCallback(bool asServer)
+        {
+            base.OnStartCallback(asServer);
+            List<CachedOnChange> collection = (asServer) ? _serverOnChanges : _clientOnChanges;
+
+            if (OnChange != null)
+            {
+                foreach (CachedOnChange item in collection)
+                    OnChange.Invoke(item.Operation, item.Index, item.Previous, item.Next, asServer);
+            }
+
+            collection.Clear();
+        }
+
+        /// <summary>
+        /// Writes all changed values.
+        /// </summary>
+        /// <param name="writer"></param>
+        ///<param name="resetSyncTick">True to set the next time data may sync.</param>
+        public override void WriteDelta(PooledWriter writer, bool resetSyncTick = true)
+        {
+            //If sending all then clear changed and write full.
+            if (_sendAll)
+            {
+                _sendAll = false;
+                _changed.Clear();
+                WriteFull(writer);
+            }
+            else
+            {
+                base.WriteDelta(writer, resetSyncTick);
+                //False for not full write.
+                writer.WriteBoolean(false);
+                writer.WriteInt32(_changed.Count);
+
+                for (int i = 0; i < _changed.Count; i++)
+                {
+                    ChangeData change = _changed[i];
+                    writer.WriteByte((byte)change.Operation);
+
+                    //Clear does not need to write anymore data so it is not included in checks.
+                    if (change.Operation == SyncListOperation.Add)
+                    {
+                        writer.Write(change.Item);
+                    }
+                    else if (change.Operation == SyncListOperation.RemoveAt)
+                    {
+                        writer.WriteInt32(change.Index);
+                    }
+                    else if (change.Operation == SyncListOperation.Insert || change.Operation == SyncListOperation.Set)
+                    {
+                        writer.WriteInt32(change.Index);
+                        writer.Write(change.Item);
+                    }
+                }
+
+                _changed.Clear();
+            }
+        }
+
+        /// <summary>
+        /// Writes all values if not initial values.
+        /// </summary>
+        /// <param name="writer"></param>
+        public override void WriteFull(PooledWriter writer)
+        {
+            if (!_valuesChanged)
+                return;
+
+            base.WriteHeader(writer, false);
+            //True for full write.
+            writer.WriteBoolean(true);
+            writer.WriteInt32(Collection.Count);
+            for (int i = 0; i < Collection.Count; i++)
+            {
+                writer.WriteByte((byte)SyncListOperation.Add);
+                writer.Write(Collection[i]);
+            }
+        }
+
+        /// <summary>
+        /// Reads and sets the current values for server or client.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        [APIExclude]
+        public override void Read(PooledReader reader, bool asServer)
+        {
+            /* When !asServer don't make changes if server is running.
+            * This is because changes would have already been made on
+            * the server side and doing so again would result in duplicates
+            * and potentially overwrite data not yet sent. */
+            bool asClientAndHost = (!asServer && base.NetworkManager.IsServer);
+            //True to warn if this object was deinitialized on the server.
+            bool deinitialized = (asClientAndHost && !base.OnStartServerCalled);
+            if (deinitialized)
+                base.NetworkManager.LogWarning($"SyncType {GetType().Name} received a Read but was deinitialized on the server. Client callback values may be incorrect. This is a ClientHost limitation.");
+
+            IList<T> collection = (asClientAndHost) ? ClientHostCollection : Collection;
+
+            //Clear collection since it's a full write.
+            bool fullWrite = reader.ReadBoolean();
+            if (fullWrite)
+                collection.Clear();
+
+            int changes = reader.ReadInt32();
+
+            for (int i = 0; i < changes; i++)
+            {
+                SyncListOperation operation = (SyncListOperation)reader.ReadByte();
+                int index = -1;
+                T prev = default;
+                T next = default;
+
+                //Add.
+                if (operation == SyncListOperation.Add)
+                {
+                    next = reader.Read<T>();
+                    if (!deinitialized)
+                    {
+                        index = collection.Count;
+                        collection.Add(next);
+                    }
+                }
+                //Clear.
+                else if (operation == SyncListOperation.Clear)
+                {
+                    if (!deinitialized)
+                        collection.Clear();
+                }
+                //Insert.
+                else if (operation == SyncListOperation.Insert)
+                {
+                    index = reader.ReadInt32();
+                    next = reader.Read<T>();
+                    if (!deinitialized)
+                        collection.Insert(index, next);
+                }
+                //RemoveAt.
+                else if (operation == SyncListOperation.RemoveAt)
+                {
+                    index = reader.ReadInt32();
+                    if (!deinitialized)
+                    {
+                        prev = collection[index];
+                        collection.RemoveAt(index);
+                    }
+                }
+                //Set
+                else if (operation == SyncListOperation.Set)
+                {
+                    index = reader.ReadInt32();
+                    next = reader.Read<T>();
+                    if (!deinitialized)
+                    {
+                        prev = collection[index];
+                        collection[index] = next;
+                    }
+                }
+
+                InvokeOnChange(operation, index, prev, next, false);
+            }
+
+            //If changes were made invoke complete after all have been read.
+            if (changes > 0)
+                InvokeOnChange(SyncListOperation.Complete, -1, default, default, false);
+        }
+
+        /// <summary>
+        /// Invokes OnChanged callback.
+        /// </summary>
+        private void InvokeOnChange(SyncListOperation operation, int index, T prev, T next, bool asServer)
+        {
+            if (asServer)
+            {
+                if (base.NetworkBehaviour.OnStartServerCalled)
+                    OnChange?.Invoke(operation, index, prev, next, asServer);
+                else
+                    _serverOnChanges.Add(new CachedOnChange(operation, index, prev, next));
+            }
+            else
+            {
+                if (base.NetworkBehaviour.OnStartClientCalled)
+                    OnChange?.Invoke(operation, index, prev, next, asServer);
+                else
+                    _clientOnChanges.Add(new CachedOnChange(operation, index, prev, next));
+            }
+        }
+
+        /// <summary>
+        /// Resets to initialized values.
+        /// </summary>
+        public override void ResetState()
+        {
+            base.ResetState();
+            _sendAll = false;
+            _changed.Clear();
+            ClientHostCollection.Clear();
+            Collection.Clear();
+
+            foreach (T item in _initialValues)
+            {
+                Collection.Add(item);
+                ClientHostCollection.Add(item);
+            }
+        }
+
+
+        /// <summary>
+        /// Adds value.
+        /// </summary>
+        /// <param name="item"></param>
+        public void Add(T item)
+        {
+            Add(item, true);
+        }
+        private void Add(T item, bool asServer)
+        {
+            if (!base.CanNetworkSetValues(true))
+                return;
+
+            Collection.Add(item);
+            if (asServer)
+            {
+                if (base.NetworkManager == null)
+                    ClientHostCollection.Add(item);
+                AddOperation(SyncListOperation.Add, Collection.Count - 1, default, item);
+            }
+        }
+        /// <summary>
+        /// Adds a range of values.
+        /// </summary>
+        /// <param name="range"></param>
+        public void AddRange(IEnumerable<T> range)
+        {
+            foreach (T entry in range)
+                Add(entry, true);
+        }
+
+        /// <summary>
+        /// Clears all values.
+        /// </summary>
+        public void Clear()
+        {
+            Clear(true);
+        }
+        private void Clear(bool asServer)
+        {
+            if (!base.CanNetworkSetValues(true))
+                return;
+
+            Collection.Clear();
+            if (asServer)
+            {
+                if (base.NetworkManager == null)
+                    ClientHostCollection.Clear();
+                AddOperation(SyncListOperation.Clear, -1, default, default);
+            }
+        }
+
+        /// <summary>
+        /// Returns if value exist.
+        /// </summary>
+        /// <param name="item"></param>
+        /// <returns></returns>
+        public bool Contains(T item)
+        {
+            return (IndexOf(item) >= 0);
+        }
+
+        /// <summary>
+        /// Copies values to an array.
+        /// </summary>
+        /// <param name="array"></param>
+        /// <param name="index"></param>
+        public void CopyTo(T[] array, int index)
+        {
+            Collection.CopyTo(array, index);
+        }
+
+        /// <summary>
+        /// Gets the index of value.
+        /// </summary>
+        /// <param name="item"></param>
+        /// <returns></returns>
+        public int IndexOf(T item)
+        {
+            for (int i = 0; i < Collection.Count; ++i)
+                if (_comparer.Equals(item, Collection[i]))
+                    return i;
+            return -1;
+        }
+
+        /// <summary>
+        /// Finds index using match.
+        /// </summary>
+        /// <param name="match"></param>
+        /// <returns></returns>
+        public int FindIndex(Predicate<T> match)
+        {
+            for (int i = 0; i < Collection.Count; ++i)
+                if (match(Collection[i]))
+                    return i;
+            return -1;
+        }
+
+        /// <summary>
+        /// Finds value using match.
+        /// </summary>
+        /// <param name="match"></param>
+        /// <returns></returns>
+        public T Find(Predicate<T> match)
+        {
+            int i = FindIndex(match);
+            return (i != -1) ? Collection[i] : default;
+        }
+
+        /// <summary>
+        /// Finds all values using match.
+        /// </summary>
+        /// <param name="match"></param>
+        /// <returns></returns>
+        public List<T> FindAll(Predicate<T> match)
+        {
+            List<T> results = new List<T>();
+            for (int i = 0; i < Collection.Count; ++i)
+                if (match(Collection[i]))
+                    results.Add(Collection[i]);
+            return results;
+        }
+
+        /// <summary>
+        /// Inserts value at index.
+        /// </summary>
+        /// <param name="index"></param>
+        /// <param name="item"></param>
+        public void Insert(int index, T item)
+        {
+            Insert(index, item, true);
+        }
+        private void Insert(int index, T item, bool asServer)
+        {
+            if (!base.CanNetworkSetValues(true))
+                return;
+
+            Collection.Insert(index, item);
+            if (asServer)
+            {
+                if (base.NetworkManager == null)
+                    ClientHostCollection.Insert(index, item);
+                AddOperation(SyncListOperation.Insert, index, default, item);
+            }
+        }
+
+        /// <summary>
+        /// Inserts a range of values.
+        /// </summary>
+        /// <param name="index"></param>
+        /// <param name="range"></param>
+        public void InsertRange(int index, IEnumerable<T> range)
+        {
+            foreach (T entry in range)
+            {
+                Insert(index, entry);
+                index++;
+            }
+        }
+
+        /// <summary>
+        /// Removes a value.
+        /// </summary>
+        /// <param name="item"></param>
+        /// <returns></returns>
+        public bool Remove(T item)
+        {
+            int index = IndexOf(item);
+            bool result = index >= 0;
+            if (result)
+                RemoveAt(index);
+
+            return result;
+        }
+
+        /// <summary>
+        /// Removes value at index.
+        /// </summary>
+        /// <param name="index"></param>
+        /// <param name="asServer"></param>
+        public void RemoveAt(int index)
+        {
+            RemoveAt(index, true);
+        }
+        private void RemoveAt(int index, bool asServer)
+        {
+            if (!base.CanNetworkSetValues(true))
+                return;
+
+            T oldItem = Collection[index];
+            Collection.RemoveAt(index);
+            if (asServer)
+            {
+                if (base.NetworkManager == null)
+                    ClientHostCollection.RemoveAt(index);
+                AddOperation(SyncListOperation.RemoveAt, index, oldItem, default);
+            }
+        }
+
+        /// <summary>
+        /// Removes all values within the collection.
+        /// </summary>
+        /// <param name="match"></param>
+        /// <returns></returns>
+        public int RemoveAll(Predicate<T> match)
+        {
+            List<T> toRemove = new List<T>();
+            for (int i = 0; i < Collection.Count; ++i)
+                if (match(Collection[i]))
+                    toRemove.Add(Collection[i]);
+
+            foreach (T entry in toRemove)
+                Remove(entry);
+
+            return toRemove.Count;
+        }
+
+        /// <summary>
+        /// Gets or sets value at an index.
+        /// </summary>
+        /// <param name="i"></param>
+        /// <returns></returns>
+        public T this[int i]
+        {
+            get => Collection[i];
+            set => Set(i, value, true, true);
+        }
+
+        /// <summary>
+        /// Dirties the entire collection forcing a full send.
+        /// This will not invoke the callback on server.
+        /// </summary>
+        public void DirtyAll()
+        {
+            if (!base.IsRegistered)
+                return;
+
+            if (base.NetworkManager != null && !base.NetworkBehaviour.IsServer)
+            {
+                base.NetworkManager.LogWarning($"Cannot complete operation as server when server is not active.");
+                return;
+            }
+
+            if (base.Dirty())
+                _sendAll = true;
+        }
+
+        /// <summary>
+        /// Looks up obj in Collection and if found marks it's index as dirty.
+        /// While using this operation previous value will be the same as next.
+        /// This operation can be very expensive, and may fail if your value cannot be compared.
+        /// </summary>
+        /// <param name="obj">Object to lookup.</param>
+        public void Dirty(T obj)
+        {
+            int index = Collection.IndexOf(obj);
+            if (index != -1)
+                Dirty(index);
+            else
+                base.NetworkManager.LogError($"Could not find object within SyncList, dirty will not be set.");
+        }
+        /// <summary>
+        /// Marks an index as dirty.
+        /// While using this operation previous value will be the same as next.
+        /// </summary>
+        /// <param name="index"></param>
+        public void Dirty(int index)
+        {
+            if (!base.CanNetworkSetValues(true))
+                return;
+
+            bool asServer = true;
+            T value = Collection[index];
+            if (asServer)
+                AddOperation(SyncListOperation.Set, index, value, value);
+        }
+        /// <summary>
+        /// Sets value at index.
+        /// </summary>
+        /// <param name="index"></param>
+        /// <param name="value"></param>
+        public void Set(int index, T value, bool force = true)
+        {
+            Set(index, value, true, force);
+        }
+        private void Set(int index, T value, bool asServer, bool force)
+        {
+            if (!base.CanNetworkSetValues(true))
+                return;
+
+            bool sameValue = (!force && !_comparer.Equals(Collection[index], value));
+            if (!sameValue)
+            {
+                T prev = Collection[index];
+                Collection[index] = value;
+                if (asServer)
+                {
+                    if (base.NetworkManager == null)
+                        ClientHostCollection[index] = value;
+                    AddOperation(SyncListOperation.Set, index, prev, value);
+                }
+            }
+        }
+
+
+        /// <summary>
+        /// Returns Enumerator for collection.
+        /// </summary>
+        /// <returns></returns>
+        public Enumerator GetEnumerator() => new Enumerator(this);
+        [APIExclude]
+        IEnumerator<T> IEnumerable<T>.GetEnumerator() => new Enumerator(this);
+        [APIExclude]
+        IEnumerator IEnumerable.GetEnumerator() => new Enumerator(this);
+
+    }
+}
+
+#else
+
+using FishNet.Documenting;
+using FishNet.Object.Synchronizing.Internal;
+using FishNet.Serializing;
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.Runtime.CompilerServices;
+using UnityEngine;
+
+namespace FishNet.Object.Synchronizing
+{
+
+    public class SyncList<T> : SyncBase, IList<T>, IReadOnlyList<T>
+    {
+        #region Types.
+        /// <summary>
+        /// Information needed to invoke a callback.
+        /// </summary>
+        private struct CachedOnChange
+        {
+            internal readonly SyncListOperation Operation;
+            internal readonly int Index;
+            internal readonly T Previous;
+            internal readonly T Next;
+
+            public CachedOnChange(SyncListOperation operation, int index, T previous, T next)
+            {
+                Operation = operation;
+                Index = index;
+                Previous = previous;
+                Next = next;
+            }
+        }
+
+        /// <summary>
+        /// Information about how the collection has changed.
+        /// </summary>
+        private struct ChangeData
+        {
+            internal readonly SyncListOperation Operation;
+            internal readonly int Index;
+            internal readonly T Item;
+
+            public ChangeData(SyncListOperation operation, int index, T item)
+            {
+                Operation = operation;
+                Index = index;
+                Item = item;
+            }
+        }
+
+        /// <summary>
+        /// Custom enumerator to prevent garbage collection.
+        /// </summary>
+        [APIExclude]
+        public struct Enumerator : IEnumerator<T>
+        {
+            public T Current { get; private set; }
+            private readonly SyncList<T> _list;
+            private int _index;
+
+            public Enumerator(SyncList<T> list)
+            {
+                this._list = list;
+                _index = -1;
+                Current = default;
+            }
+
+            public bool MoveNext()
+            {
+                _index++;
+                if (_index >= _list.Count)
+                    return false;
+                Current = _list[_index];
+                return true;
+            }
+
+            public void Reset() => _index = -1;
+            object IEnumerator.Current => Current;
+            public void Dispose() { }
+        }
+        #endregion
+
+        #region Public.
+        /// <summary>
+        /// Implementation from List<T>. Not used.
+        /// </summary>
+        [APIExclude]
+        public bool IsReadOnly => false;
+        /// <summary>
+        /// Delegate signature for when SyncList changes.
+        /// </summary>
+        /// <param name="op"></param>
+        /// <param name="index"></param>
+        /// <param name="oldItem"></param>
+        /// <param name="newItem"></param>
+        [APIExclude]
+        public delegate void SyncListChanged(SyncListOperation op, int index, T oldItem, T newItem, bool asServer);
+        /// <summary>
+        /// Called when the SyncList changes.
+        /// </summary>
+        public event SyncListChanged OnChange;
+        /// <summary>
+        /// Collection of objects.
+        /// </summary>
+        public readonly IList<T> Collection;
+        /// <summary>
+        /// Copy of objects on client portion when acting as a host.
+        /// </summary>
+        public readonly IList<T> ClientHostCollection = new List<T>();
+        /// <summary>
+        /// Number of objects in the collection.
+        /// </summary>
+        public int Count => Collection.Count;
+        #endregion
+
+        #region Private.        
+        /// <summary>
+        /// Values upon initialization.
+        /// </summary>
+        private IList<T> _initialValues = new List<T>();
+        /// <summary>
+        /// Comparer to see if entries change when calling public methods.
+        /// </summary>
+        private readonly IEqualityComparer<T> _comparer;
+        /// <summary>
+        /// Changed data which will be sent next tick.
+        /// </summary>
+        private readonly List<ChangeData> _changed = new List<ChangeData>();
+        /// <summary>
+        /// Server OnChange events waiting for start callbacks.
+        /// </summary>
+        private readonly List<CachedOnChange> _serverOnChanges = new List<CachedOnChange>();
+        /// <summary>
+        /// Client OnChange events waiting for start callbacks.
+        /// </summary>
+        private readonly List<CachedOnChange> _clientOnChanges = new List<CachedOnChange>();
+        /// <summary>
+        /// True if values have changed since initialization.
+        /// The only reasonable way to reset this during a Reset call is by duplicating the original list and setting all values to it on reset.
+        /// </summary>
+        private bool _valuesChanged;
+        /// <summary>
+        /// True to send all values in the next WriteDelta.
+        /// </summary>
+        private bool _sendAll;
+        #endregion
+
+        [APIExclude]
+        public SyncList() : this(new List<T>(), EqualityComparer<T>.Default) { }
+        [APIExclude]
+        public SyncList(IEqualityComparer<T> comparer) : this(new List<T>(), (comparer == null) ? EqualityComparer<T>.Default : comparer) { }
+        [APIExclude]
+        public SyncList(IList<T> collection, IEqualityComparer<T> comparer = null)
+        {
+            this._comparer = (comparer == null) ? EqualityComparer<T>.Default : comparer;
+            this.Collection = collection;
+            //Add each in collection to clienthostcollection.
+            foreach (T item in collection)
+                this.ClientHostCollection.Add(item);
+        }
+
+        /// <summary>
+        /// Called when the SyncType has been registered, but not yet initialized over the network.
+        /// </summary>
+        protected override void Registered()
+        {
+            base.Registered();
+            foreach (T item in Collection)
+                _initialValues.Add(item);
+        }
+
+        /// <summary>
+        /// Gets the collection being used within this SyncList.
+        /// </summary>
+        /// <param name="asServer">True if returning the server value, false if client value. The values will only differ when running as host. While asServer is true the most current values on server will be returned, and while false the latest values received by client will be returned.</param>
+        /// <returns></returns>
+        public List<T> GetCollection(bool asServer)
+        {
+            bool asClientAndHost = (!asServer && base.NetworkManager.IsServer);
+            IList<T> collection = (asClientAndHost) ? ClientHostCollection : Collection;
+            return (collection as List<T>);
+        }
+
+        /// <summary>
+        /// Adds an operation and invokes locally.
+        /// </summary>
+        /// <param name="operation"></param>
+        /// <param name="index"></param>
+        /// <param name="prev"></param>
+        /// <param name="next"></param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void AddOperation(SyncListOperation operation, int index, T prev, T next)
+        {
+            if (!base.IsRegistered)
+                return;
+
+            /* asServer might be true if the client is setting the value
+            * through user code. Typically synctypes can only be set
+            * by the server, that's why it is assumed asServer via user code.
+            * However, when excluding owner for the synctype the client should
+            * have permission to update the value locally for use with
+            * prediction. */
+            bool asServerInvoke = (!base.IsNetworkInitialized || base.NetworkBehaviour.IsServer);
+
+            /* Only the adds asServer may set
+             * this synctype as dirty and add
+             * to pending changes. However, the event may still
+             * invoke for clientside. */
+            if (asServerInvoke)
+            {
+                /* Set as changed even if cannot dirty.
+                * Dirty is only set when there are observers,
+                * but even if there are not observers
+                * values must be marked as changed so when
+                * there are observers, new values are sent. */
+                _valuesChanged = true;
+
+                /* If unable to dirty then do not add to changed.
+                 * A dirty may fail if the server is not started
+                 * or if there's no observers. Changed doesn't need
+                 * to be populated in this situations because clients
+                 * will get the full collection on spawn. If we
+                 * were to also add to changed clients would get the full
+                 * collection as well the changed, which would double results. */
+                if (base.Dirty())
+                {
+                    ChangeData change = new ChangeData(operation, index, next);
+                    _changed.Add(change);
+                }
+            }
+
+            InvokeOnChange(operation, index, prev, next, asServerInvoke);
+        }
+
+        /// <summary>
+        /// Called after OnStartXXXX has occurred.
+        /// </summary>
+        /// <param name="asServer">True if OnStartServer was called, false if OnStartClient.</param>
+        public override void OnStartCallback(bool asServer)
+        {
+            base.OnStartCallback(asServer);
+            List<CachedOnChange> collection = (asServer) ? _serverOnChanges : _clientOnChanges;
+
+            if (OnChange != null)
+            {
+                foreach (CachedOnChange item in collection)
+                    OnChange.Invoke(item.Operation, item.Index, item.Previous, item.Next, asServer);
+            }
+
+            collection.Clear();
+        }
+
+        /// <summary>
+        /// Writes all changed values.
+        /// </summary>
+        /// <param name="writer"></param>
+        ///<param name="resetSyncTick">True to set the next time data may sync.</param>
+        public override void WriteDelta(PooledWriter writer, bool resetSyncTick = true)
+        {
+            //If sending all then clear changed and write full.
+            if (_sendAll)
+            {
+                _sendAll = false;
+                _changed.Clear();
+                WriteFull(writer);
+            }
+            else
+            {
+                int count = _changed.Count;
+                if (count == 0)
+                    return;
+
+                base.WriteDelta(writer, resetSyncTick);
+                //False for not full write.
+                writer.WriteBoolean(false);
+                WriteChangeId(writer, false);
+                //Number of entries expected.
+                writer.WriteInt32(_changed.Count);
+
+                for (int i = 0; i < _changed.Count; i++)
+                {
+                    ChangeData change = _changed[i];
+                    writer.WriteByte((byte)change.Operation);
+
+                    //Clear does not need to write anymore data so it is not included in checks.
+                    if (change.Operation == SyncListOperation.Add)
+                    {
+                        writer.Write(change.Item);
+                    }
+                    else if (change.Operation == SyncListOperation.RemoveAt)
+                    {
+                        writer.WriteInt32(change.Index);
+                    }
+                    else if (change.Operation == SyncListOperation.Insert || change.Operation == SyncListOperation.Set)
+                    {
+                        writer.WriteInt32(change.Index);
+                        writer.Write(change.Item);
+                    }
+                }
+
+                _changed.Clear();
+            }
+        }
+
+
+        /// <summary>
+        /// Writes all values if not initial values.
+        /// </summary>
+        /// <param name="writer"></param>
+        public override void WriteFull(PooledWriter writer)
+        {
+            if (!_valuesChanged)
+                return;
+
+            base.WriteFull(writer);            
+            base.WriteHeader(writer, false);
+            //True for full write.
+            writer.WriteBoolean(true);
+            WriteChangeId(writer, true);
+
+            int count = Collection.Count;
+            writer.WriteInt32(count);
+            for (int i = 0; i < count; i++)
+            {
+                writer.WriteByte((byte)SyncListOperation.Add);
+                writer.Write(Collection[i]);
+            }
+        }
+
+        /// <summary>
+        /// Reads and sets the current values for server or client.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        [APIExclude]
+        public override void Read(PooledReader reader, bool asServer)
+        {
+            /* When !asServer don't make changes if server is running.
+            * This is because changes would have already been made on
+            * the server side and doing so again would result in duplicates
+            * and potentially overwrite data not yet sent. */
+            bool asClientAndHost = (!asServer && base.NetworkManager.IsServer);
+            //True to warn if this object was deinitialized on the server.
+            bool deinitialized = (asClientAndHost && !base.OnStartServerCalled);
+            if (deinitialized)
+                base.NetworkManager.LogWarning($"SyncType {GetType().Name} received a Read but was deinitialized on the server. Client callback values may be incorrect. This is a ClientHost limitation.");
+
+            IList<T> collection = (asClientAndHost) ? ClientHostCollection : Collection;
+            bool fullWrite = reader.ReadBoolean();
+            //Clear collection since it's a full write.
+            if (fullWrite)
+                collection.Clear();
+
+            bool ignoreReadChanges = base.ReadChangeId(reader);
+            int changes = reader.ReadInt32();
+
+            for (int i = 0; i < changes; i++)
+            {
+                SyncListOperation operation = (SyncListOperation)reader.ReadByte();
+                int index = -1;
+                T prev = default;
+                T next = default;
+
+                //Add.
+                if (operation == SyncListOperation.Add)
+                {
+                    next = reader.Read<T>();
+                    if (!ignoreReadChanges)
+                    {
+                        index = collection.Count;
+                        collection.Add(next);
+                    }
+                }
+                //Clear.
+                else if (operation == SyncListOperation.Clear)
+                {
+                    if (!ignoreReadChanges)
+                        collection.Clear();
+                }
+                //Insert.
+                else if (operation == SyncListOperation.Insert)
+                {
+                    index = reader.ReadInt32();
+                    next = reader.Read<T>();
+                    if (!ignoreReadChanges)
+                        collection.Insert(index, next);
+                }
+                //RemoveAt.
+                else if (operation == SyncListOperation.RemoveAt)
+                {
+                    index = reader.ReadInt32();
+                    if (!ignoreReadChanges)
+                    {
+                        prev = collection[index];
+                        collection.RemoveAt(index);
+                    }
+                }
+                //Set
+                else if (operation == SyncListOperation.Set)
+                {
+                    index = reader.ReadInt32();
+                    next = reader.Read<T>();
+                    if (!ignoreReadChanges)
+                    {
+                        prev = collection[index];
+                        collection[index] = next;
+                    }
+                }
+
+                if (!ignoreReadChanges)
+                    InvokeOnChange(operation, index, prev, next, false);
+            }
+            
+            if (!ignoreReadChanges)
+                InvokeOnChange(SyncListOperation.Complete, -1, default, default, false);
+        }
+
+        /// <summary>
+        /// Invokes OnChanged callback.
+        /// </summary>
+        private void InvokeOnChange(SyncListOperation operation, int index, T prev, T next, bool asServer)
+        {
+            if (asServer)
+            {
+                if (base.NetworkBehaviour.OnStartServerCalled)
+                    OnChange?.Invoke(operation, index, prev, next, asServer);
+                else
+                    _serverOnChanges.Add(new CachedOnChange(operation, index, prev, next));
+            }
+            else
+            {
+                if (base.NetworkBehaviour.OnStartClientCalled)
+                    OnChange?.Invoke(operation, index, prev, next, asServer);
+                else
+                    _clientOnChanges.Add(new CachedOnChange(operation, index, prev, next));
+            }
+        }
+
+        /// <summary>
+        /// Resets to initialized values.
+        /// </summary>
+        public override void ResetState()
+        {
+            base.ResetState();
+            _sendAll = false;
+            _changed.Clear();
+            ClientHostCollection.Clear();
+            Collection.Clear();
+
+            foreach (T item in _initialValues)
+            {
+                Collection.Add(item);
+                ClientHostCollection.Add(item);
+            }
+        }
+
+
+        /// <summary>
+        /// Adds value.
+        /// </summary>
+        /// <param name="item"></param>
+        public void Add(T item)
+        {
+            Add(item, true);
+        }
+        private void Add(T item, bool asServer)
+        {
+            if (!base.CanNetworkSetValues(true))
+                return;
+
+            Collection.Add(item);
+            if (asServer)
+            {
+                if (base.NetworkManager == null)
+                    ClientHostCollection.Add(item);
+                AddOperation(SyncListOperation.Add, Collection.Count - 1, default, item);
+            }
+        }
+        /// <summary>
+        /// Adds a range of values.
+        /// </summary>
+        /// <param name="range"></param>
+        public void AddRange(IEnumerable<T> range)
+        {
+            foreach (T entry in range)
+                Add(entry, true);
+        }
+
+        /// <summary>
+        /// Clears all values.
+        /// </summary>
+        public void Clear()
+        {
+            Clear(true);
+        }
+        private void Clear(bool asServer)
+        {
+            if (!base.CanNetworkSetValues(true))
+                return;
+
+            Collection.Clear();
+            if (asServer)
+            {
+                if (base.NetworkManager == null)
+                    ClientHostCollection.Clear();
+                AddOperation(SyncListOperation.Clear, -1, default, default);
+            }
+        }
+
+        /// <summary>
+        /// Returns if value exist.
+        /// </summary>
+        /// <param name="item"></param>
+        /// <returns></returns>
+        public bool Contains(T item)
+        {
+            return (IndexOf(item) >= 0);
+        }
+
+        /// <summary>
+        /// Copies values to an array.
+        /// </summary>
+        /// <param name="array"></param>
+        /// <param name="index"></param>
+        public void CopyTo(T[] array, int index)
+        {
+            Collection.CopyTo(array, index);
+        }
+
+        /// <summary>
+        /// Gets the index of value.
+        /// </summary>
+        /// <param name="item"></param>
+        /// <returns></returns>
+        public int IndexOf(T item)
+        {
+            for (int i = 0; i < Collection.Count; ++i)
+                if (_comparer.Equals(item, Collection[i]))
+                    return i;
+            return -1;
+        }
+
+        /// <summary>
+        /// Finds index using match.
+        /// </summary>
+        /// <param name="match"></param>
+        /// <returns></returns>
+        public int FindIndex(Predicate<T> match)
+        {
+            for (int i = 0; i < Collection.Count; ++i)
+                if (match(Collection[i]))
+                    return i;
+            return -1;
+        }
+
+        /// <summary>
+        /// Finds value using match.
+        /// </summary>
+        /// <param name="match"></param>
+        /// <returns></returns>
+        public T Find(Predicate<T> match)
+        {
+            int i = FindIndex(match);
+            return (i != -1) ? Collection[i] : default;
+        }
+
+        /// <summary>
+        /// Finds all values using match.
+        /// </summary>
+        /// <param name="match"></param>
+        /// <returns></returns>
+        public List<T> FindAll(Predicate<T> match)
+        {
+            List<T> results = new List<T>();
+            for (int i = 0; i < Collection.Count; ++i)
+                if (match(Collection[i]))
+                    results.Add(Collection[i]);
+            return results;
+        }
+
+        /// <summary>
+        /// Inserts value at index.
+        /// </summary>
+        /// <param name="index"></param>
+        /// <param name="item"></param>
+        public void Insert(int index, T item)
+        {
+            Insert(index, item, true);
+        }
+        private void Insert(int index, T item, bool asServer)
+        {
+            if (!base.CanNetworkSetValues(true))
+                return;
+
+            Collection.Insert(index, item);
+            if (asServer)
+            {
+                if (base.NetworkManager == null)
+                    ClientHostCollection.Insert(index, item);
+                AddOperation(SyncListOperation.Insert, index, default, item);
+            }
+        }
+
+        /// <summary>
+        /// Inserts a range of values.
+        /// </summary>
+        /// <param name="index"></param>
+        /// <param name="range"></param>
+        public void InsertRange(int index, IEnumerable<T> range)
+        {
+            foreach (T entry in range)
+            {
+                Insert(index, entry);
+                index++;
+            }
+        }
+
+        /// <summary>
+        /// Removes a value.
+        /// </summary>
+        /// <param name="item"></param>
+        /// <returns></returns>
+        public bool Remove(T item)
+        {
+            int index = IndexOf(item);
+            bool result = index >= 0;
+            if (result)
+                RemoveAt(index);
+
+            return result;
+        }
+
+        /// <summary>
+        /// Removes value at index.
+        /// </summary>
+        /// <param name="index"></param>
+        /// <param name="asServer"></param>
+        public void RemoveAt(int index)
+        {
+            RemoveAt(index, true);
+        }
+        private void RemoveAt(int index, bool asServer)
+        {
+            if (!base.CanNetworkSetValues(true))
+                return;
+
+            T oldItem = Collection[index];
+            Collection.RemoveAt(index);
+            if (asServer)
+            {
+                if (base.NetworkManager == null)
+                    ClientHostCollection.RemoveAt(index);
+                AddOperation(SyncListOperation.RemoveAt, index, oldItem, default);
+            }
+        }
+
+        /// <summary>
+        /// Removes all values within the collection.
+        /// </summary>
+        /// <param name="match"></param>
+        /// <returns></returns>
+        public int RemoveAll(Predicate<T> match)
+        {
+            List<T> toRemove = new List<T>();
+            for (int i = 0; i < Collection.Count; ++i)
+                if (match(Collection[i]))
+                    toRemove.Add(Collection[i]);
+
+            foreach (T entry in toRemove)
+                Remove(entry);
+
+            return toRemove.Count;
+        }
+
+        /// <summary>
+        /// Gets or sets value at an index.
+        /// </summary>
+        /// <param name="i"></param>
+        /// <returns></returns>
+        public T this[int i]
+        {
+            get => Collection[i];
+            set => Set(i, value, true, true);
+        }
+
+        /// <summary>
+        /// Dirties the entire collection forcing a full send.
+        /// This will not invoke the callback on server.
+        /// </summary>
+        public void DirtyAll()
+        {
+            if (!base.IsRegistered)
+                return;
+
+            if (base.NetworkManager != null && !base.NetworkBehaviour.IsServer)
+            {
+                base.NetworkManager.LogWarning($"Cannot complete operation as server when server is not active.");
+                return;
+            }
+
+            if (base.Dirty())
+                _sendAll = true;
+        }
+
+        /// <summary>
+        /// Looks up obj in Collection and if found marks it's index as dirty.
+        /// While using this operation previous value will be the same as next.
+        /// This operation can be very expensive, and may fail if your value cannot be compared.
+        /// </summary>
+        /// <param name="obj">Object to lookup.</param>
+        public void Dirty(T obj)
+        {
+            int index = Collection.IndexOf(obj);
+            if (index != -1)
+                Dirty(index);
+            else
+                base.NetworkManager.LogError($"Could not find object within SyncList, dirty will not be set.");
+        }
+        /// <summary>
+        /// Marks an index as dirty.
+        /// While using this operation previous value will be the same as next.
+        /// </summary>
+        /// <param name="index"></param>
+        public void Dirty(int index)
+        {
+            if (!base.CanNetworkSetValues(true))
+                return;
+
+            bool asServer = true;
+            T value = Collection[index];
+            if (asServer)
+                AddOperation(SyncListOperation.Set, index, value, value);
+        }
+        /// <summary>
+        /// Sets value at index.
+        /// </summary>
+        /// <param name="index"></param>
+        /// <param name="value"></param>
+        public void Set(int index, T value, bool force = true)
+        {
+            Set(index, value, true, force);
+        }
+        private void Set(int index, T value, bool asServer, bool force)
+        {
+            if (!base.CanNetworkSetValues(true))
+                return;
+
+            bool sameValue = (!force && !_comparer.Equals(Collection[index], value));
+            if (!sameValue)
+            {
+                T prev = Collection[index];
+                Collection[index] = value;
+                if (asServer)
+                {
+                    if (base.NetworkManager == null)
+                        ClientHostCollection[index] = value;
+                    AddOperation(SyncListOperation.Set, index, prev, value);
+                }
+            }
+        }
+
+
+        /// <summary>
+        /// Returns Enumerator for collection.
+        /// </summary>
+        /// <returns></returns>
+        public Enumerator GetEnumerator() => new Enumerator(this);
+        [APIExclude]
+        IEnumerator<T> IEnumerable<T>.GetEnumerator() => new Enumerator(this);
+        [APIExclude]
+        IEnumerator IEnumerable.GetEnumerator() => new Enumerator(this);
+
+    }
+}
+
+
+#endif 
+
+// Assets\FishNet\Runtime\Object\Synchronizing\SyncListOperation.cs:
+ 
+using FishNet.Documenting;
+
+namespace FishNet.Object.Synchronizing
+{
+    [APIExclude]
+    public enum SyncListOperation : byte
+    {
+        /// <summary>
+        /// An item is added to the collection.
+        /// </summary>
+        Add,
+        /// <summary>
+        /// An item is inserted into the collection.
+        /// </summary>
+        Insert,
+        /// <summary>
+        /// An item is set in the collection.
+        /// </summary>
+        Set,
+        /// <summary>
+        /// An item is removed from the collection.
+        /// </summary>
+        RemoveAt,
+        /// <summary>
+        /// Collection is cleared.
+        /// </summary>
+        Clear,
+        /// <summary>
+        /// All operations for the tick have been processed. This only occurs on clients as the server is unable to be aware of when the user is done modifying the list.
+        /// </summary>
+        Complete
+    }
+
+}
+ 
+
+// Assets\FishNet\Runtime\Object\Synchronizing\SyncListOperation.cs:
+ 
+using FishNet.Documenting;
+
+namespace FishNet.Object.Synchronizing
+{
+    [APIExclude]
+    public enum SyncListOperation : byte
+    {
+        /// <summary>
+        /// An item is added to the collection.
+        /// </summary>
+        Add,
+        /// <summary>
+        /// An item is inserted into the collection.
+        /// </summary>
+        Insert,
+        /// <summary>
+        /// An item is set in the collection.
+        /// </summary>
+        Set,
+        /// <summary>
+        /// An item is removed from the collection.
+        /// </summary>
+        RemoveAt,
+        /// <summary>
+        /// Collection is cleared.
+        /// </summary>
+        Clear,
+        /// <summary>
+        /// All operations for the tick have been processed. This only occurs on clients as the server is unable to be aware of when the user is done modifying the list.
+        /// </summary>
+        Complete
+    }
+
+}
+ 
+
+
+
+# TASK: I want to copylogic of object syncing from TorchController into TorchGlobalManager which will have several Non networked torches TorchControllerNoNetwork. So Im splitting logic to a single manager taht will control and check interaction with torches it see. Please modify TorchGlobalManager to have full functionality of InteractableObjectManager

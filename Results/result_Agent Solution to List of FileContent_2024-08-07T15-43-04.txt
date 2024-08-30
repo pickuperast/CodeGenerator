@@ -1,0 +1,24 @@
+This C# code snippet defines a custom editor for a Unity component called `DungeonHolderNetworked`. It enhances the default inspector view with additional functionality, specifically for debugging and visualizing room information during runtime.
+
+**Explanation:**
+
+1. **Namespace:** The code is contained within the namespace `_ZombieRoyale.Scripts.Dungeon.Editors`. This suggests it's part of a larger game project with a specific structure for dungeon-related scripts.
+2. **Custom Editor Attribute:** The `[CustomEditor(typeof(DungeonHolderNetworked))]` attribute is crucial. It tells Unity to use this `DungeonHolderNetworkedEditor` class instead of the default inspector for `DungeonHolderNetworked` components.
+3. **`OnEnable` Method:** This method is called when the editor is enabled. It assigns the `DungeonHolderNetworked` component to the `_dungeonHolderNetworked` field.
+4. **`OnInspectorGUI` Method:** This method is responsible for drawing the custom inspector GUI.
+   - **Base Inspector:** `base.OnInspectorGUI()` displays the standard inspector fields for the `DungeonHolderNetworked` component.
+   - **Runtime Checks:** The code only executes the custom logic when the application is playing.
+   - **Null Check:** It checks if the `RoomInfosDict` dictionary is null or empty, preventing potential errors.
+   - **Helper Section:** Displays the `ServerUptime` in a more readable format.
+   - **Room Infos Section:**
+     - Extracts the keys (Room IDs) and values (Room Info objects) from the `RoomInfosDict` dictionary.
+     - Uses `EditorGUILayout.BeginHorizontal()` and `EditorGUILayout.EndHorizontal()` to create horizontal layouts for displaying the data.
+     - Loops through the keys and values, displaying the Room ID and its corresponding `CollapsingTime`.
+
+**Key Points:**
+
+- **Runtime Information:** This custom editor primarily focuses on providing information during runtime, which is useful for debugging the game's dungeon system.
+- **Data Visualization:** It presents a clear overview of the rooms and their collapsing times, helping developers understand the state of the dungeon.
+- **Customizability:** The code structure can be easily adapted to display other relevant information from the `DungeonHolderNetworked` component.
+
+**Overall:** This code demonstrates a practical approach to extending Unity's built-in editor functionality to offer custom views and tools for managing and debugging game elements.

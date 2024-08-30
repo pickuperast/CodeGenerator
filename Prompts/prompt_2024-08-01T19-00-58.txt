@@ -1,0 +1,405 @@
+# ROLE:
+Unity3D code architect.
+
+# GOAL:
+Write specific and detailed code for Unity3D projects.
+
+# BACKSTORY:
+You are a Unity 3D Code Writer. You write specific and detailed code for Unity 3D projects in C#.
+You provide solutions to coding problems, write scripts for game mechanics, and integrate various assets and systems.
+You have a deep understanding of Unity 3D, C#, and game development principles.
+You follow best practices for performance optimization, code organization, and version control.
+You collaborate closely with the Unity 3D Architect to ensure that the codebase aligns with the overall project architecture.
+Stick and balance between with Clean code principles and SOLID principles and 'Clean' Code, Horrible Performance - by Casey Muratori.
+Make clean and efficient code, remember that focusing exclusively on either aspect can lead to less optimal results.
+Maintaining a good understanding of the trade-offs between readability, maintainability, and performance is crucial.
+Keep in mind that NetworkBehaviour constructors are not allowed.
+Remember that [SyncObject], [SyncVar] are allowed only in NetworkBehaviour classes.
+Always provide FULL CODE of the file just to copy paste code and application should run.
+# CODE: // Assets\Sanat\CodeGenerator\ApiGemini\ApiGemini.cs:
+ using System;
+using System.Collections.Generic;
+using UnityEngine;
+using UnityEngine.Networking;
+
+namespace Sanat.ApiGemini
+{
+    public static class Gemini
+    {
+        public static string BaseURL { get; set; } = "https://us-central1-aiplatform.googleapis.com/v1/";
+        public static string BaseURL2 { get; set; } = "https://generativelanguage.googleapis.com/v1beta/models/";
+        public static string GenerateContentURL2 => $"{BaseURL}projects/{GetGeminiProjectName()}/locations/us-central1/publishers/google/models/gemini-1.5-pro-preview-0514:generateContent";
+        public static string GenerateContentURL => $"{BaseURL}projects/{GetGeminiProjectName()}/locations/us-central1/publishers/google/models/gemini-1.5-pro-preview-0514:generateContent";
+        public const string PREFS_GEMINI_PROJECT_NAME = "GeminiProjectName";
+        
+        public static string GetGeminiProjectName()
+        {
+            return PlayerPrefs.GetString(PREFS_GEMINI_PROJECT_NAME, "");
+        }
+
+        public static UnityWebRequestAsyncOperation SubmitChatAsync(string apiKey, string model, float temperature, int maxTokens,
+            List<ChatMessage> messages, Action<string> callback)
+        {
+            var chatRequest = new ChatRequest(model, temperature, messages, maxTokens);
+            string jsonData = JsonUtility.ToJson(chatRequest);
+            string generatedUrl = $"{BaseURL2}{model}:generateContent?key={apiKey}";
+            UnityWebRequest webRequest = CreateWebRequest(apiKey, generatedUrl, jsonData);
+
+            UnityWebRequestAsyncOperation asyncOp = webRequest.SendWebRequest();
+
+            asyncOp.completed += (op) =>
+            {
+                var success = webRequest.result == UnityWebRequest.Result.Success;
+                var text = success ? webRequest.downloadHandler.text : string.Empty;
+                if (!success) Debug.Log($"{webRequest.error}\n{webRequest.downloadHandler.text}");
+                webRequest.Dispose();
+                webRequest = null;
+
+                if (!string.IsNullOrEmpty(text))
+                {
+                    var responseData = JsonUtility.FromJson<ChatResponse>(text);
+                    text = responseData.candidates[0].content.parts[0].text.Trim();
+                    var tokensPrompt = responseData.usageMetadata.promptTokenCount;
+                    var tokensCompletion = responseData.usageMetadata.candidatesTokenCount;
+                    var tokensTotal = responseData.usageMetadata.totalTokenCount;
+                    
+                    Debug.Log($"{model} Usage: prompt_tokens: {tokensPrompt}; " +
+                              $"completion_tokens: {tokensCompletion}; " +
+                              $"total_tokens: {tokensTotal}");
+                }
+                callback?.Invoke(text);
+            };
+
+            return asyncOp;
+        }
+
+        public static UnityWebRequest CreateWebRequest(string apiKey, string url, string jsonData)
+        {
+            byte[] postData = System.Text.Encoding.UTF8.GetBytes(jsonData);
+
+            UnityWebRequest webRequest = new UnityWebRequest(url, "POST");
+            webRequest.uploadHandler = new UploadHandlerRaw(postData);
+            webRequest.downloadHandler = new DownloadHandlerBuffer();
+            webRequest.disposeUploadHandlerOnDispose = true;
+            webRequest.disposeDownloadHandlerOnDispose = true;
+            webRequest.SetRequestHeader("Content-Type", "application/json");
+            webRequest.SetRequestHeader("Authorization", "Bearer " + apiKey);
+
+            return webRequest;
+        }
+    }
+
+    [Serializable]
+    public class ChatRequest
+    {
+        public string model;
+        public GenerationConfig generationConfig;
+        public List<Content> contents;
+
+        public ChatRequest(string model, float temperature, List<ChatMessage> messages, int maxTokens)
+        {
+            this.model = model;
+            this.generationConfig = new GenerationConfig
+            {
+                temperature = temperature,
+                maxOutputTokens = maxTokens
+            };
+            this.contents = new List<Content>();
+            foreach (var message in messages)
+            {
+                this.contents.Add(new Content
+                {
+                    role = message.role,
+                    parts = new List<Part> { new Part { text = message.content } }
+                });
+            }
+        }
+    }
+
+    [Serializable]
+    public class GenerationConfig
+    {
+        public float temperature;
+        public int maxOutputTokens;
+    }
+
+    [Serializable]
+    public class Content
+    {
+        public string role;
+        public List<Part> parts;
+    }
+
+    [Serializable]
+    public class Part
+    {
+        public string text;
+    }
+
+    [Serializable]
+    public class ChatMessage
+    {
+        public string role;
+        public string content;
+
+        public ChatMessage(string role, string content)
+        {
+            this.role = role;
+            this.content = content;
+        }
+    }
+
+    [Serializable]
+    public class ChatResponse
+    {
+        public List<Candidate> candidates;
+        public UsageMetadata usageMetadata;
+    }
+
+    [Serializable]
+    public class Candidate
+    {
+        public Content content;
+        public string finishReason;
+        public List<SafetyRating> safetyRatings;
+    }
+
+    [Serializable]
+    public class SafetyRating
+    {
+        public string category;
+        public string probability;
+    }
+
+    [Serializable]
+    public class UsageMetadata
+    {
+        public int promptTokenCount;
+        public int candidatesTokenCount;
+        public int totalTokenCount;
+    }
+} 
+
+// Assets\Sanat\CodeGenerator\Agents\AbstractAgentHandler.cs:
+ // Copyright (c) Sanat. All rights reserved.
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Text.RegularExpressions;
+using Sanat.ApiOpenAI;
+using Sanat.ApiAnthropic;
+using Sanat.ApiGemini;
+using Sanat.ApiGroq;
+using UnityEngine;
+using UnityEngine.Networking;
+
+namespace Sanat.CodeGenerator.Agents
+{
+    public abstract class AbstractAgentHandler
+    {
+        public string Name { get; set; }
+        public string Description { get; set; }
+        public string[] Tools { get; set; }
+        public float Temperature { get; set; }
+        public string Instructions { get; set; }
+        public ApiProviders SelectedApiProvider = ApiProviders.Anthropic;
+        public ApiKeys Apikeys;
+        public Action OnComplete;
+        public enum ApiProviders { OpenAI, Anthropic, Groq, Gemini }
+        
+        
+        
+        public AbstractAgentHandler SetNext(AbstractAgentHandler handler)
+        {
+            _nextHandler = handler;
+            return handler;
+        }
+
+        protected AbstractAgentHandler _nextHandler;
+
+        protected abstract string PromptFilename();
+
+        protected void StoreOpenAIKey(string key)
+        {
+            Apikeys.openAI = key;
+        }
+        
+        public void StoreKeys(ApiKeys keys)
+        {
+            Apikeys = keys;
+        }
+
+        protected virtual Model GetModel()
+        {
+            return Model.GPT4o;
+        }
+        
+        public static string LoadPrompt(string path)
+        {
+            if (File.Exists(path))
+            {
+                try
+                {
+                    Debug.Log($"Successfully loaded instructions from: {path}");
+                    return File.ReadAllText(path);
+                }
+                catch (Exception e)
+                {
+                    Debug.LogError($"Error reading .md file: {e.Message}");
+                }
+            }
+            else
+            {
+                Debug.LogError("The .md file does not exist in the specified path.");
+            }
+            return String.Empty;
+        }
+
+        public virtual void Handle(string input)
+        {
+            OnComplete?.Invoke();
+            if (_nextHandler != null)
+            {
+                _nextHandler.Handle(input);
+            }
+        }
+        
+        public void AskBot(string prompt, float temp, Action<string> onComplete) {
+            switch (SelectedApiProvider)
+            {
+                case ApiProviders.OpenAI:
+                    AskChatGpt(prompt, temp, onComplete);
+                    break;
+                case ApiProviders.Anthropic:
+                    AskAntrophic(prompt, temp, onComplete);
+                    break;
+                case ApiProviders.Groq:
+                    AskGroq(prompt, temp, onComplete);
+                    break;
+                case ApiProviders.Gemini:
+                    AskGemini(prompt, temp, onComplete);
+                    break;
+            }
+        }
+        
+        public void AskChatGpt(string prompt, float temp, Action<string> onComplete) {
+            List<ApiOpenAI.ChatMessage> messages = new List<ApiOpenAI.ChatMessage>();
+            messages.Add(new ApiOpenAI.ChatMessage("user", prompt));
+            var model = GetModel();
+            
+            UnityWebRequestAsyncOperation request = OpenAI.SubmitChatAsync(
+                Apikeys.openAI,
+                model,
+                temp,
+                model.MaxOutput,
+                messages,
+                onComplete
+            );
+        }
+        
+        public void AskAntrophic(string prompt, float temp, Action<string> onComplete) {
+            List<ApiAnthropic.ChatMessage> messages = new List<ApiAnthropic.ChatMessage>();
+            messages.Add(new ApiAnthropic.ChatMessage("user", prompt));
+
+            UnityWebRequestAsyncOperation request = Anthropic.SubmitChatAsync(
+                Apikeys.antrophic,
+                ApiAnthropicModels.Claude35,
+                temp,
+                4000,
+                messages,
+                onComplete
+            );
+        }
+        
+        public void AskGroq(string prompt, float temp, Action<string> onComplete) {
+            List<ApiGroq.ChatMessage> messages = new List<ApiGroq.ChatMessage>();
+            messages.Add(new ApiGroq.ChatMessage("user", prompt));
+
+            UnityWebRequestAsyncOperation request = Groq.SubmitChatAsync(
+                Apikeys.groq,
+                ApiGroqModels.Llama3_70b_8192,
+                temp,
+                4095,
+                messages,
+                onComplete
+            );
+        }
+        
+        public void AskGemini(string prompt, float temp, Action<string> onComplete) {
+            List<ApiGemini.ChatMessage> messages = new List<ApiGemini.ChatMessage>();
+            messages.Add(new ApiGemini.ChatMessage("user", prompt));
+
+            UnityWebRequestAsyncOperation request = Gemini.SubmitChatAsync(
+                Apikeys.gemini,
+                ApiGeminiModels.Pro, // or whatever model you're using
+                temp,
+                4095,
+                messages,
+                onComplete
+            );
+        }
+
+        public enum Brackets { round, square, curly, angle }
+        
+        public static string ClearResult(string input, Brackets bracket = Brackets.square)
+        {
+            string pattern = @"(\[.*\])";
+            switch (bracket)
+            {
+                case Brackets.round:
+                    pattern = @"(\(.*\))";
+                    break;
+                case Brackets.curly:
+                    pattern = @"(\{.*\})";
+                    break;
+                case Brackets.angle:
+                    pattern = @"(\<.*\>)";
+                    break;
+            }
+            Match match = Regex.Match(input, pattern, RegexOptions.Singleline);
+    
+            if (match.Success)
+            {
+                return match.Groups[1].Value;
+            }
+            Debug.LogError("No match found");
+            return input;
+        }
+
+        public struct ApiKeys
+        {
+            public string openAI;
+            public string antrophic;
+            public string groq;
+            public string gemini;
+            
+            public ApiKeys(string openAI, string antrophic, string groq, string gemini)
+            {
+                this.openAI = openAI;
+                this.antrophic = antrophic;
+                this.groq = groq;
+                this.gemini = gemini;
+            }
+        }
+    }
+} 
+
+
+
+# TASK: update ApiGemini ChatRequest class to provide json with this structure: {
+    "contents": {
+        "role": "user",
+        "parts": {
+            "text": "Give me a recipe for banana bread."
+        }
+    },
+    "safety_settings": {
+        "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+        "threshold": "BLOCK_LOW_AND_ABOVE"
+    },
+    "generation_config": {
+        "temperature": 0.2,
+        "topP": 0.8,
+        "topK": 40
+    }
+}

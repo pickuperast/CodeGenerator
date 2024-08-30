@@ -1,0 +1,145 @@
+```csharp
+// Assets\-ZombieRoyale\Scripts\Abilities\AbilityScripts\AIChargeStunAbility.cs:
+using System.Collections;
+using _ZombieRoyale.Scripts.Core;
+using _ZombieRoyale.Scripts.AI.Boss_Perks;
+using FishNet.Connection;
+using FishNet.Object;
+using FishnetInvector;
+using UnityEngine;
+
+public class AIChargeStunAbility : Ability
+{
+    private const float CAST_TIME = 2f;
+    private const float CHARGE_SPEED = 20f;
+    private const float STUN_DURATION = 2f;
+    private const float PLAYER_STUN_DURATION = 2f;
+
+    public override IEnumerator Activate(AbilityCastingData data)
+    {
+        var casterComps = UnitComponentsManager.GetUnitComponentsServerAndClient(data.casterNetId);
+        var targetComps = UnitComponentsManager.GetUnitComponentsServerAndClient(casterComps.AiUnit.GetTargetId());
+        if (targetComps == null) yield break;
+
+        Vector3 direction = (targetComps.Trans.position - casterComps.Trans.position).normalized;
+        casterComps.AiUnit.PauseTimed(CAST_TIME);
+        casterComps.AiUnit.AnimatorDecorator.SetBool("IsCasting", true);
+
+        float elapsedTime = 0f;
+        while (elapsedTime < CAST_TIME)
+        {
+            casterComps.Trans.rotation = Quaternion.Slerp(casterComps.Trans.rotation, Quaternion.LookRotation(direction), Time.deltaTime * 5f);
+            elapsedTime += Time.deltaTime;
+            yield return null;
+        }
+
+        casterComps.AiUnit.AnimatorDecorator.SetBool("IsCasting", false);
+        casterComps.AiUnit.AnimatorDecorator.SetBool("IsCharging", true);
+
+        float chargeDistance = Vector3.Distance(casterComps.Trans.position, targetComps.Trans.position);
+        float chargeTime = chargeDistance / CHARGE_SPEED;
+        elapsedTime = 0f;
+
+        while (elapsedTime < chargeTime)
+        {
+            casterComps.Trans.position += direction * CHARGE_SPEED * Time.deltaTime;
+            elapsedTime += Time.deltaTime;
+            yield return null;
+        }
+
+        casterComps.AiUnit.AnimatorDecorator.SetBool("IsCharging", false);
+
+        if (Vector3.Distance(casterComps.Trans.position, targetComps.Trans.position) < 1f)
+        {
+            StunTarget(targetComps, PLAYER_STUN_DURATION);
+        }
+        else
+        {
+            StunTarget(casterComps, STUN_DURATION);
+        }
+    }
+
+    private void StunTarget(UnitComponents targetComps, float duration)
+    {
+        targetComps.AiUnit.PauseTimed(duration);
+        targetComps.AnimatorDecorator.SetBool("IsStunned", true);
+        StartCoroutine(RemoveStunAfterDelay(targetComps, duration));
+    }
+
+    private IEnumerator RemoveStunAfterDelay(UnitComponents targetComps, float duration)
+    {
+        yield return new WaitForSeconds(duration);
+        targetComps.AnimatorDecorator.SetBool("IsStunned", false);
+    }
+
+    public override void OnCastingStarted(AbilityCastingData data, in float castDuration)
+    {
+        var casterComps = UnitComponentsManager.GetUnitComponentsServerAndClient(data.casterNetId);
+        StatusIndicatorManager.InitLine(casterComps.Trans, 4f, 15f, castDuration);
+    }
+
+    public override string GetAbilityDescription(int rank, FNStatsController statsController)
+    {
+        return $"Charges towards the target, stunning the target for {PLAYER_STUN_DURATION} seconds if hit, otherwise stunning self for {STUN_DURATION} seconds.";
+    }
+}
+
+// Assets\-ZombieRoyale\Scripts\AI\Unit Perks\AIChargeStunController.cs:
+using System.Collections;
+using FishNet.Object;
+using UnityEngine;
+
+namespace _ZombieRoyale.Scripts.AI.Boss_Perks
+{
+    public class AIChargeStunController : UnitBehaviour
+    {
+        [SerializeField] private AbilityDefinition chargeAbility;
+        private readonly float CAST_TIME = 2f;
+
+        [Server]
+        public void Init()
+        {
+            SpawnIndicator();
+            aiUnit.PauseTimed(CAST_TIME);
+            StartCoroutine(Cast());
+        }
+
+        [Server]
+        private IEnumerator Cast()
+        {
+            yield return new WaitForSeconds(CAST_TIME);
+            AbilityCastingData abilityCastingData = new AbilityCastingData();
+            abilityCastingData.casterNetId = NetworkObject.ObjectId;
+            abilityCastingData.abilityId = chargeAbility.Id;
+            AbilityManager.Instance.InitAbility(abilityCastingData);
+        }
+
+        private void Start()
+        {
+            StartCoroutine(TestSpawnIndicators());
+        }
+
+        protected IEnumerator TestSpawnIndicators()
+        {
+            while (true)
+            {
+                SpawnIndicator();
+                yield return new WaitForSeconds(2.5f);
+            }
+        }
+
+        [ObserversRpc]
+        protected override void SpawnIndicator()
+        {
+            StartCoroutine(IndicatorCoroutine());
+        }
+
+        [Client]
+        private IEnumerator IndicatorCoroutine()
+        {
+            StatusIndicatorManager.InitLine(transform, 4f, 15f, CAST_TIME);
+            yield break;
+        }
+    }
+}
+```

@@ -1,0 +1,81 @@
+csharp
+using System.Collections;
+using System.Collections.Generic;
+using Photon.Pun;
+using UnityEngine;
+
+namespace _ZombieRoyale.Scripts.Dungeon
+{
+    public class Room : MonoBehaviourPunCallbacks
+    {
+        public int RoomId;
+        public GameObject[] EnemiesPrefabs;
+        public Transform[] EnemySpawnPoints;
+        public Transform[] PlayerSpawnPoints;
+        public float EnemiesSpawnDelay = 5f;
+
+        private List<GameObject> _enemiesInRoom;
+        private Coroutine _enemiesSpawnCoroutine;
+        private float _enemiesSpawnTimer;
+        private bool _isRoomActive = true;
+
+        public bool IsRoomActive => _isRoomActive;
+
+        public void Awake()
+        {
+            _enemiesInRoom = new List<GameObject>();
+            _enemiesSpawnTimer = EnemiesSpawnDelay;
+        }
+
+        private void Start()
+        {
+            if (PhotonNetwork.IsMasterClient)
+            {
+                _enemiesSpawnCoroutine = StartCoroutine(SpawnEnemies());
+            }
+        }
+
+        private IEnumerator SpawnEnemies()
+        {
+            while (_isRoomActive)
+            {
+                yield return new WaitForSeconds(_enemiesSpawnTimer);
+                if (EnemySpawnPoints.Length > 0 && EnemiesPrefabs.Length > 0)
+                {
+                    int randomSpawnPointIndex = Random.Range(0, EnemySpawnPoints.Length);
+                    int randomPrefabIndex = Random.Range(0, EnemiesPrefabs.Length);
+                    GameObject enemy = PhotonNetwork.Instantiate(EnemiesPrefabs[randomPrefabIndex].name, EnemySpawnPoints[randomSpawnPointIndex].position, EnemySpawnPoints[randomSpawnPointIndex].rotation);
+                    _enemiesInRoom.Add(enemy);
+                }
+            }
+        }
+
+        public void SetRoomActive(bool active)
+        {
+            _isRoomActive = active;
+            if (!_isRoomActive && _enemiesSpawnCoroutine != null)
+            {
+                StopCoroutine(_enemiesSpawnCoroutine);
+            }
+            if (PhotonNetwork.IsMasterClient && active)
+            {
+                _enemiesSpawnCoroutine = StartCoroutine(SpawnEnemies());
+            }
+        }
+
+        public void ResetEnemies()
+        {
+            foreach (var enemy in _enemiesInRoom)
+            {
+                PhotonNetwork.Destroy(enemy);
+            }
+            _enemiesInRoom.Clear();
+        }
+
+        public void ClearRoom()
+        {
+            ResetEnemies();
+            SetRoomActive(false);
+        }
+    }
+}

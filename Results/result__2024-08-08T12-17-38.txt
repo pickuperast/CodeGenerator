@@ -1,0 +1,269 @@
+```csharp
+ using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.Reflection;
+using _ZombieRoyale.Scripts.Core;
+using FishnetInvector;
+using Invector;
+using UnityEngine;
+using UnityEngine.Rendering;
+using UnityEngine.Rendering.Universal;
+using Zomb.Creatures.Helpers;
+
+public class DamagingCollider : MonoBehaviour
+{
+    [SerializeField] private Collider _collider;
+    [SerializeField] private vDamage _damagePerTick = new vDamage();
+    [SerializeField] private float _damageTickRate = 1.0f;
+    [SerializeField] private Transform _fxPrefab;
+    [SerializeField] private AttachmentPoints.Point _fxSpawnPoint;
+    [SerializeField] private string screenEffectPropertyName = "_VignetteIntensity";
+    
+    [Header("OnScreenEffect")] 
+    [SerializeField] private string screenEffectName = "LavaEffect";
+    [SerializeField] private FullScreenFX fullScreenFX;
+    private int _voronoiIntensity = Shader.PropertyToID("_VoronoiIntensity");
+    private int _vignetteIntensity = Shader.PropertyToID("_VignetteIntensity");
+    private const float VIGNETTE_INTENSITY_START_AMOUNT = 0.6f;
+    private const float VORONOI_INTENSITY_START_AMOUNT = 1.0f;
+
+    [Header("Time Stats")] 
+    [SerializeField] private float _hurtDisplayTime = 1.5f;
+    [SerializeField] private float _hurtFadeOutTime = .5f;
+    [field:SerializeField] public bool IsActive { get; private set; }
+    
+    private Dictionary<FishnetInvectorHealthController, Coroutine> _damageTimer = new ();
+    private ObjectsPool<Transform> _fxPool;
+    [SerializeField] private AnimatorDecorator _animatorDecorator;
+
+    public Action<UnitComponents> OnUnitEnter;
+    public Action<UnitComponents> OnUnitExit;
+    public Action<UnitComponents> OnUnitStay;
+
+    #region Initialization
+    private void OnValidate()
+    {
+        AssignComponentsIfRequired();
+    }
+
+    private void AssignComponentsIfRequired()
+    {
+        _collider ??= GetComponent<BoxCollider>();
+        _animatorDecorator ??= GetComponent<AnimatorDecorator>();
+    }
+
+    private void Awake()
+    {
+        if (_fxPrefab != null)
+            _fxPool = new ObjectsPool<Transform>(transform, _fxPrefab, 3);
+        AssignComponentsIfRequired();
+    }
+
+    #endregion
+    
+    public void Activate()
+    {
+        IsActive = true;
+        _collider.enabled = true;
+        ShowScreenFXIfRequired();
+    }
+    
+    public void Deactivate()
+    {
+        IsActive = false;
+        _collider.enabled = false;
+        HideScreenFXIfRequired();
+    }
+    
+    private UnitComponents GetUnitComponents(Collider other) {
+        if (other.CompareTag("Player"))
+        {
+            if (GameplayManager.Instance.GetHealthController(other) != null)
+                return GameplayManager.Instance.GetHealthController(other).UnitComponents;
+        }
+
+        return new NullUnitComponents();
+    }
+
+    private void OnTriggerEnter(Collider other)
+    {
+        if (!IsActive)
+        {
+            return;
+        }
+        var unitComponents = GetUnitComponents(other);
+        
+        if (unitComponents != NullUnitComponents.Instance)
+        {
+            OnUnitEnter?.Invoke(unitComponents);
+        }
+        
+        if (!enabled)
+            return;
+        
+        if (!GameplayManager.IsOwningPlayer(other))
+            return;
+        
+        if (_animatorDecorator != null)
+            _animatorDecorator.SetTrigger("DoActivate");
+
+        StartDamagingIfRequired(other);
+    }
+
+    private void OnTriggerStay(Collider other)
+    {
+        
+    }
+
+    private void OnTriggerExit(Collider other)
+    {
+        if (!IsActive)
+        {
+            return;
+        }
+        
+        var unitComponents = GetUnitComponents(other);
+        
+        if (unitComponents != NullUnitComponents.Instance)
+        {
+            OnUnitExit?.Invoke(unitComponents);
+        }
+        
+        if (!GameplayManager.IsOwningPlayer(other))
+            return;
+        
+        Debug.Log($"[DamagingCollider] OnTriggerExit room: {gameObject.name}; player: {other.name}");
+        FishnetInvectorHealthController hc = GameplayManager.Instance.GetHealthController(other);
+        if (!_damageTimer.ContainsKey(hc))
+            return;
+        StopCoroutine(_damageTimer[hc]);
+        _damageTimer.Remove(hc);
+    }
+
+    private void StartDamagingIfRequired(Collider other)
+    {
+        FishnetInvectorHealthController hc = GameplayManager.Instance.GetHealthController(other);
+        if (_damageTimer.ContainsKey(hc))
+            return;
+        
+        Debug.Log($"[DamagingCollider] StartDamagingIfRequired room: {gameObject.name}; player: {other.name}");
+        Vector3 closestPoint = other.ClosestPoint(transform.position);
+        _damageTimer.Add(hc, StartCoroutine(DamagingCoroutine(hc, closestPoint)));
+    }
+
+    private IEnumerator DamagingCoroutine(FishnetInvectorHealthController hc, Vector3 closestPoint)
+    {
+        while (true)
+        {
+            SetupAndDealDamage(hc, closestPoint);
+            yield return new WaitForSeconds(_damageTickRate);
+        }
+    }
+
+    private IEnumerator Hurt(float hurtDisplayTime)
+    {
+        Debug.Log($"[DamagingCollider] Hurt room: {gameObject.name}");
+        ShowFullScreenEffect();
+        yield return new WaitForSeconds(hurtDisplayTime);
+        
+        float elapsedTime = 0;
+        while (elapsedTime < _hurtFadeOutTime)
+        {
+            elapsedTime += Time.deltaTime;
+            float lerpedVoronoi = Mathf.Lerp(VORONOI_INTENSITY_START_AMOUNT, 0f, elapsedTime / _hurtFadeOutTime);
+            float lerpedVignette = Mathf.Lerp(VIGNETTE_INTENSITY_START_AMOUNT, 0f, elapsedTime / _hurtFadeOutTime);
+            
+            fullScreenFX.screenEffectMaterial.SetFloat(_voronoiIntensity, lerpedVoronoi);
+            fullScreenFX.screenEffectMaterial.SetFloat(_vignetteIntensity, lerpedVignette);
+            yield return null;
+        }
+    }
+
+    private void ShowFullScreenEffect()
+    {
+        ExtractScriptableRendererData();
+        foreach ( var renderObjSetting in _scriptableRendererData.rendererFeatures)
+        {
+            if (renderObjSetting.name == screenEffectName)
+            {
+                renderObjSetting.SetActive(true);
+            }
+        }
+    }
+
+    private ScriptableRendererData _scriptableRendererData;
+    
+    private void ExtractScriptableRendererData()
+    {
+        var pipeline = ((UniversalRenderPipelineAsset)GraphicsSettings.renderPipelineAsset);
+        FieldInfo propertyInfo = pipeline.GetType(  ).GetField( "m_RendererDataList", BindingFlags.Instance | BindingFlags.NonPublic );
+        _scriptableRendererData = ((ScriptableRendererData[]) propertyInfo?.GetValue( pipeline ))?[0];
+    }
+
+    private void HideFullScreenEffect()
+    {
+        ExtractScriptableRendererData();
+        foreach ( var renderObjSetting in _scriptableRendererData.rendererFeatures)
+        {
+            if (renderObjSetting.name == screenEffectName)
+            {
+                renderObjSetting.SetActive(false);
+            }
+        }
+        //StartCoroutine(Hurt(.0f));
+    }
+
+    public void ShowScreenFXIfRequired()
+    {
+        if (screenEffectName == string.Empty)
+            return;
+
+        ShowFullScreenEffect();
+    }
+
+    public void HideScreenFXIfRequired()
+    {
+        if (screenEffectName == string.Empty)
+            return;
+        
+        HideFullScreenEffect();
+    }
+
+    private void SetupAndDealDamage(FishnetInvectorHealthController hc, Vector3 closestPoint)
+    {
+        _damagePerTick.senderNetworkObjectID = hc.ObjectId;
+        _damagePerTick.receiver = hc.transform;
+        _damagePerTick.hitPosition = closestPoint;
+        _damagePerTick.type = vDamage.DamageType.Trap;
+        Debug.Log($"[DamagingCollider] SetupAndDealDamage room: {gameObject.name}; player: {hc.gameObject.name}");
+        FNvDamage fNvDamage = _damagePerTick.ToFNvDamage();
+        hc.CmdDealMeDamagePlease(fNvDamage);
+        var unitComps = hc.UnitComponents;
+        unitComps.AttachmentPoints.GetAttachmentPoint(_fxSpawnPoint);
+        //itween allocate _fxPool.Allocate() and deallocate _fxPool.Deallocate() after 1 sec
+        if (_fxPrefab != null)
+        {
+            var fx = _fxPool.Allocate();
+            fx.position = unitComps.AttachmentPoints.GetAttachmentPoint(_fxSpawnPoint).position;
+            fx.rotation = unitComps.AttachmentPoints.GetAttachmentPoint(_fxSpawnPoint).rotation;
+            StartCoroutine(DestroyFX(fx));
+        }
+    }
+
+    private IEnumerator DestroyFX(Transform fx)
+    {
+        yield return new WaitForSeconds(1f);
+        _fxPool.Deallocate(fx);
+    }
+
+    [Serializable]
+    public struct FullScreenFX
+    {
+        public ScriptableRendererFeature[] renderFeatures;
+        public Material screenEffectMaterial;
+    }
+} 
+```
+Result: INVALID
+Explanation: solution is missing code part of OnTriggerStay method, so when we insert provided solution program will fail. Solution should have full code.

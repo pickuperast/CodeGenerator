@@ -1,0 +1,796 @@
+```csharp
+// Assets\FishNet Invector\Scripts\Networked\DamageHandlers\AbstractDamageHandler.cs:
+using Invector;
+
+public abstract class AbstractDamageHandler : IDamageHandler
+{
+    private IDamageHandler _nextHandler;
+
+    public IDamageHandler SetNext(IDamageHandler handler)
+    {
+        _nextHandler = handler;
+        return handler;
+    }
+
+    public virtual void Handle(vDamage damage)
+    {
+        if (_nextHandler != null)
+        {
+            _nextHandler.Handle(damage);
+        }
+    }
+}
+ 
+
+// Assets\FishNet Invector\Scripts\Networked\DamageHandlers\AggroHandle.cs:
+using System.Collections.Generic;
+using _ZombieRoyale.Scripts.Core;
+using FirstGearGames.LobbyAndWorld.Demos.KingOfTheHill;
+using FishnetInvector;
+using Invector;
+using Invector.vItemManager;
+using UnityEngine;
+
+public class AggroHandle : AbstractDamageHandler
+{
+    private AggroManager _aggroManager;
+
+    public AggroHandle(UnitComponents damagerUnit)
+    {
+        //_aggroManager = damagerUnit.AiUnit.AggroManager;
+    }
+
+    public override void Handle(vDamage damage)
+    {
+        UnitComponents damagerUnit = UnitComponentsManager.GetUnitComponentsServerAndClient(damage.senderNetworkObjectID);
+        //_aggroManager.AddAggro(damage.senderNetworkObjectID, damage.damageValue);
+        //int newTarget = _aggroManager.GetHighestPriorityTarget();
+        //_aggroManager.GetComponent<AIUnit>().UpdateTarget(newTarget);      
+
+        base.Handle(damage);
+    }
+}
+ 
+
+// Assets\FishNet Invector\Scripts\Networked\DamageHandlers\AllyDamageHandler.cs:
+using System.Collections;
+using System.Collections.Generic;
+using Invector;
+using UnityEngine;
+
+public class AllyDamageHandler : AbstractDamageHandler
+{
+    private readonly bool _isAllyOnlyForPlayers;
+
+    public AllyDamageHandler(bool isAllyOnlyForPlayers) {
+        _isAllyOnlyForPlayers = isAllyOnlyForPlayers;
+    }
+    
+    public override void Handle(vDamage damage) {
+        if (_isAllyOnlyForPlayers)
+        {
+            damage.SetDamage(0f);
+        }
+        base.Handle(damage);
+    }
+}
+ 
+
+// Assets\FishNet Invector\Scripts\Networked\DamageHandlers\BuffDivineShieldHandler.cs:
+using _ZombieRoyale.Scripts.Core;
+using Invector;
+
+public class BuffDivineShieldHandler : AbstractDamageHandler
+{
+    private int myObjectId;
+
+    public BuffDivineShieldHandler(UnitComponents meUnit)
+    {
+        myObjectId = meUnit.StatsController.NetworkObject.ObjectId;
+    }
+    
+    public override void Handle(vDamage damage)
+    {
+        if (BuffDivineShield.Instance.IsTargetBuffed(myObjectId))
+        {
+            damage.SetDamage(0f);
+        }
+        else
+        {
+            base.Handle(damage);
+        }
+    }
+} 
+
+// Assets\FishNet Invector\Scripts\Networked\DamageHandlers\CriticalStrikeHandler.cs:
+using _ZombieRoyale.Scripts.Core;
+using FirstGearGames.LobbyAndWorld.Demos.KingOfTheHill;
+using Invector;
+using UnityEngine;
+
+public class CriticalStrikeHandler : AbstractDamageHandler
+{
+    private UnitComponents _damagerUnit;
+    private int _myObjectId;
+
+    public CriticalStrikeHandler(UnitComponents damagerUnit)
+    {
+        _damagerUnit = damagerUnit;
+    }
+
+    public override void Handle(vDamage damage)
+    {
+        if (damage.canCrit)
+        {
+            float critChance = _damagerUnit.StatsController.GetStatByType(Stat.STAT_TYPE.CRITICAL_STRIKE_CHANCE).GetCurrentAmount();
+            float critDamage = _damagerUnit.StatsController.GetStatByType(Stat.STAT_TYPE.CRITICAL_STRIKE_POWER).GetCurrentAmount();
+
+            if (Random.value <= critChance)
+            {
+                Debug.Log($"[CriticalStrikeHandler] Critical strike! {critDamage}x damage!");
+                damage.SetDamage(damage.damageValue * critDamage);
+                damage.IsCriticalDamage = true;
+            }
+        }
+        
+        base.Handle(damage);
+    }
+} 
+
+// Assets\FishNet Invector\Scripts\Networked\DamageHandlers\DamageSystem.cs:
+using _ZombieRoyale.Scripts.Core;
+using Invector;
+using System.IO;
+
+public class DamageSystem
+{
+    private readonly IDamageHandler _chain;
+
+    public DamageSystem(UnitComponents meUnit, UnitComponents damagerUnit, bool isAllyOnlyForPlayers)
+    {
+        IDamageHandler skipDead = new SkipDeadHandler(meUnit);
+        IDamageHandler allyHandler = new AllyDamageHandler(isAllyOnlyForPlayers);
+        IDamageHandler buffDivineShieldHandler = new BuffDivineShieldHandler(meUnit);
+        IDamageHandler shieldHandler = new ShieldDamageHandler(meUnit);
+        IDamageHandler energyShieldHandler = new EnergyShieldHandler(meUnit);
+
+
+        IDamageHandler meleeDamageHandler = new MeleeDamageHandler(damagerUnit);
+        IDamageHandler mountainSplitterStrikeHandler = new MountainSplitterStrikeHandler();
+        IDamageHandler passiveWeakSpot = new PassiveWeakSpotHandler();
+        IDamageHandler magicDamageHandler = new MagicDamageHandler(damagerUnit);
+        IDamageHandler criticalStrikeHandler = new CriticalStrikeHandler(damagerUnit);
+
+        IDamageHandler leechHandler = new LeechHandler(damagerUnit);
+        IDamageHandler aggroHandle = new AggroHandle(meUnit);
+        IDamageHandler physicalArmorHandler = new PhysicalArmorDamageHandler(damagerUnit);
+        IDamageHandler magicalArmorHandler = new MagicalArmorDamageHandler(damagerUnit);
+        IDamageHandler rockSkinHandler = new RockSkinHandler(meUnit);
+ 
+        IDamageHandler thornShellHandler = new ThornShellHandler(meUnit);
+        IDamageHandler passiveVampiricTouch = new PassiveVampiricTouchHandler();
+        
+        IDamageHandler durabilityHandler = new DurabilityDamageHandler(meUnit);
+
+        skipDead.SetNext(allyHandler);
+        allyHandler.SetNext(buffDivineShieldHandler);
+        buffDivineShieldHandler.SetNext(shieldHandler);
+        shieldHandler.SetNext(energyShieldHandler);
+        energyShieldHandler.SetNext(meleeDamageHandler);
+        meleeDamageHandler.SetNext(mountainSplitterStrikeHandler);
+        mountainSplitterStrikeHandler.SetNext(passiveWeakSpot);
+        passiveWeakSpot.SetNext(magicDamageHandler);
+        magicDamageHandler.SetNext(criticalStrikeHandler);
+        criticalStrikeHandler.SetNext(leechHandler);
+        leechHandler.SetNext(aggroHandle);
+        aggroHandle.SetNext(physicalArmorHandler);
+        physicalArmorHandler.SetNext(magicalArmorHandler);
+        magicalArmorHandler.SetNext(rockSkinHandler);
+        rockSkinHandler.SetNext(thornShellHandler);
+        thornShellHandler.SetNext(passiveVampiricTouch);
+        passiveVampiricTouch.SetNext(durabilityHandler);
+  
+        _chain = skipDead;
+    }
+
+    public void TakeDamage(vDamage damage)
+    {
+        _chain.Handle(damage);
+    }
+    
+    public void SaveLogFile()
+    {
+        string path = "DamageLog.txt";
+        using (StreamWriter writer = new StreamWriter(path, true))
+        {
+            writer.WriteLine("Damage log saved at: " + System.DateTime.Now);
+        }
+    }
+} 
+
+// Assets\FishNet Invector\Scripts\Networked\DamageHandlers\EnergyShieldHandler.cs:
+using _ZombieRoyale.Scripts.Core;
+using Invector;
+using UnityEngine;
+
+public class EnergyShieldHandler : AbstractDamageHandler
+{
+    private readonly FNStatsController _statsController;
+    private readonly int _netId;
+    
+    private const int DAMAGE_WHEN_ABSORBED = 0;
+
+    public EnergyShieldHandler(UnitComponents meUnit)
+    {
+        _statsController = meUnit.StatsController;
+        _netId = _statsController.NetworkObject.ObjectId;
+    }
+    
+    public override void Handle(vDamage damage)
+    {
+        if (BuffEnergyShield.Instance.IsTargetBuffed(_netId) && EnergyShield.IsDamageAbsorbed(_statsController))
+        {
+            Debug.Log($"{_statsController.gameObject.name} damage absorbed by energy shield", _statsController.gameObject);
+            damage.SetDamage(DAMAGE_WHEN_ABSORBED);
+        }
+        else
+        {
+            base.Handle(damage);
+        }
+    }
+} 
+
+// Assets\FishNet Invector\Scripts\Networked\DamageHandlers\IDamageHandler.cs:
+using Invector;
+
+public interface IDamageHandler
+{
+    IDamageHandler SetNext(IDamageHandler handler);
+    void Handle(vDamage damage);
+} 
+
+// Assets\FishNet Invector\Scripts\Networked\DamageHandlers\LeechHandler.cs:
+using System.Collections.Generic;
+using _ZombieRoyale.Scripts.Core;
+using FirstGearGames.LobbyAndWorld.Demos.KingOfTheHill;
+using FishnetInvector;
+using Invector;
+using Invector.vItemManager;
+using UnityEngine;
+
+public class LeechHandler : AbstractDamageHandler
+{
+    private float _leech;
+
+    public LeechHandler(UnitComponents meUnit)
+    {
+        CombatEntityStat entityStat = meUnit.StatsController.GetStatByType(Stat.STAT_TYPE.LEECH);
+        var value = entityStat.GetCurrentAmount();
+        _leech = value;
+    }
+
+    public override void Handle(vDamage damage)
+    {
+        UnitComponents damagerUnit = UnitComponentsManager.GetUnitComponentsServerAndClient(damage.senderNetworkObjectID);
+
+        float healAmount = Mathf.Max(damage.damageValue * _leech, 0);       
+        FishnetInvectorHealthController.HealData healData = new() { senderNetId = damagerUnit.NetworkObject.ObjectId, amount = healAmount, isHideText = true};
+        damagerUnit.HealthController.Heal(healData);
+
+        base.Handle(damage);
+        
+    }
+}
+ 
+
+// Assets\FishNet Invector\Scripts\Networked\DamageHandlers\MagicalArmorDamageHandler.cs:
+using System.Collections.Generic;
+using _ZombieRoyale.Scripts.Core;
+using FirstGearGames.LobbyAndWorld.Demos.KingOfTheHill;
+using FishnetInvector;
+using Invector;
+using Invector.vItemManager;
+using UnityEngine;
+
+public class MagicalArmorDamageHandler : AbstractDamageHandler
+{
+    private float _armor;
+
+    public MagicalArmorDamageHandler(UnitComponents meUnit)
+    {
+        CombatEntityStat entityStat = meUnit.StatsController.GetStatByType(Stat.STAT_TYPE.MAGICAL_ARMOR);
+        var value = entityStat.GetCurrentAmount();
+        _armor = value;
+    }
+
+    public override void Handle(vDamage damage)
+    {
+        // Calculate damage reduction based on armor.
+        // TODO: armor should be a percentage of damage reduction.
+        if (damage.type == vDamage.DamageType.Magic)
+        {
+            float reducedDamage = Mathf.Max(damage.damageValue - (damage.damageValue * _armor), 0);
+            damage.SetDamage(reducedDamage);
+        }
+
+        // Call the next handler in the chain if there is any damage left.
+        if (damage.damageValue > 0)
+        {
+            base.Handle(damage);
+        }
+    }
+}
+ 
+
+// Assets\FishNet Invector\Scripts\Networked\DamageHandlers\MagicDamageHandler.cs:
+using _ZombieRoyale.Scripts.Core;
+using FirstGearGames.LobbyAndWorld.Demos.KingOfTheHill;
+using Invector;
+
+public class MagicDamageHandler : AbstractDamageHandler
+{
+    private readonly vDamage.DamageType[] MAGIC_DAMAGE_TYPES = new vDamage.DamageType[] { vDamage.DamageType.Fire, vDamage.DamageType.Magic, vDamage.DamageType.Ice, vDamage.DamageType.Lightning };
+    private readonly UnitComponents _damagerUnit;
+
+    public MagicDamageHandler(UnitComponents damagerUnit)
+    {
+        _damagerUnit = damagerUnit;
+    }
+
+    public override void Handle(vDamage damage)
+    {
+        float magicDamage = _damagerUnit.StatsController.GetStatByType(Stat.STAT_TYPE.MAGIC_DAMAGE).GetCurrentAmount();
+        
+        for (int i = 0; i < MAGIC_DAMAGE_TYPES.Length; i++)
+        {
+            if (damage.type == MAGIC_DAMAGE_TYPES[i])
+            {
+                float newDamage = damage.damageValue + (damage.damageValue * magicDamage);
+                damage.SetDamage(newDamage);
+                break;
+            }
+        }
+
+        base.Handle(damage);
+    }
+} 
+
+// Assets\FishNet Invector\Scripts\Networked\DamageHandlers\MeleeDamageHandler.cs:
+using System.Collections.Generic;
+using System.Text;
+using _ZombieRoyale.Scripts.Core;
+using Custom.Scripts.Melee;
+using FirstGearGames.LobbyAndWorld.Demos.KingOfTheHill;
+using FishnetInvector;
+using Invector;
+using Invector.vItemManager;
+using SingletonsExtension;
+using UnityEngine;
+
+public class MeleeDamageHandler : AbstractDamageHandler
+{    
+    private readonly vDamage.DamageType[] DAMAGE_TYPES = new vDamage.DamageType[] { vDamage.DamageType.Melee };
+    private readonly Stat.STAT_TYPE[] AFFECTING_STATS = new Stat.STAT_TYPE[] { Stat.STAT_TYPE.POWER };
+    private readonly float STRTENGTH_INFLUENCE_ONE_HAND = 2f;
+    private readonly float STRTENGTH_INFLUENCE_TWO_HAND = 1f;
+    private readonly UnitComponents _damagerUnit;
+    public static Dictionary<int, List<MeleeAttackData>> MeleeAttackDatas = new ();
+
+    public MeleeDamageHandler(UnitComponents damagerUnit)
+    {
+        _damagerUnit = damagerUnit;
+    }
+    public override void Handle(vDamage damage)
+    {
+        if (damage.damageValue <= 0)
+            return;
+
+        bool isFound = false;
+        for (int i = 0; i < DAMAGE_TYPES.Length; i++)
+        {
+            if (damage.type == DAMAGE_TYPES[i])
+            {
+                isFound = true;
+                break;
+            }
+        }
+
+        if (!isFound)
+        {
+            base.Handle(damage);
+            return;
+        }
+
+        float totalDamage = 0f;
+        if (_damagerUnit.AnimatorDecorator.Animator.isHuman)
+        {
+            totalDamage = GetWeaponDamageForHumanoid(damage, totalDamage);
+        }
+        else
+        {
+            totalDamage = damage.damageValue;
+            AddValueFromStats(ref totalDamage);
+        }
+
+        if (_damagerUnit.AiUnit) totalDamage *= _damagerUnit.AiUnit.GlobalPowerMultiplier;
+
+        damage.SetDamage(totalDamage);
+        base.Handle(damage);
+    }
+
+    private List<MeleeAttackData> GetMeleeAttackDatas(int weaponItemId)
+    {
+        if (MeleeAttackDatas.ContainsKey(weaponItemId))
+        {
+            return MeleeAttackDatas[weaponItemId];
+        }
+        else
+        {
+            vItem leftWweaponItem = MasterManager.GetVItem(weaponItemId);
+            var originalObject = leftWweaponItem.originalObject;
+            var meleeAttackData = originalObject.GetComponent<FNvMeleeWeapon>();
+            if (meleeAttackData != null)
+            {
+                MeleeAttackDatas.Add(weaponItemId, meleeAttackData.MeleeAttackDatas);
+                return meleeAttackData.MeleeAttackDatas;
+            }
+            else
+            {
+                Debug.LogError($"[MeleeDamageHandler] GetMeleeAttackDatas! FNvMeleeWeapon is not found in originalObject {originalObject}");
+                return null;
+            }
+        }
+    }
+
+    private float GetWeaponDamageForHumanoid(vDamage damage, float totalDamage)
+    {
+        StringBuilder sb = new StringBuilder($"[MeleeDamageHandler] GetWeaponDamageForHumanoid totalDamage {totalDamage}->");
+        var itemManager = _damagerUnit.ItemManager;
+        int weaponItemId = 0;
+        if (itemManager)
+        {
+            weaponItemId = itemManager.RightHandItemId;
+            if (weaponItemId > 0)
+            {
+                totalDamage = CalcWeaponDamage(damage, weaponItemId, sb);
+            }
+            else
+            {
+                weaponItemId = itemManager.LeftHandItemId;
+                if (weaponItemId > 0)
+                {
+                    totalDamage = CalcWeaponDamage(damage, weaponItemId, sb);
+                }
+                else
+                {
+                    sb = new StringBuilder($"[MeleeDamageHandler] GetWeaponDamageForHumanoid! BareHandsAttack weaponItemId: {weaponItemId} is not found in itemManager");
+                }
+            }
+        }
+        Debug.Log(sb.ToString());
+        return totalDamage;
+    }
+
+    private float CalcWeaponDamage(vDamage damage, int weaponItemId, StringBuilder sb)
+    {
+        float totalDamage = 0f;
+        if (damage.weaponItemId == weaponItemId)
+        {
+            vItem item = MasterManager.GetVItem(weaponItemId);
+            var meleeAttackDatas = GetMeleeAttackDatas(weaponItemId);
+            int swingCounter = damage.SwingCounter;
+
+            if (swingCounter > 0)
+            {
+                Debug.Log($"[MeleeDamageHandler] CalcWeaponDamage! swingCounter: {swingCounter} is greater than 0");
+            }
+
+            var multiplayer = meleeAttackDatas[swingCounter].damageMultiplier;              
+            var powerValue = _damagerUnit.StatsController.GetAllCurrentValueServerOnly(Stat.STAT_TYPE.POWER);
+            totalDamage = (int)(multiplayer * powerValue / 10);
+            sb.Append($"{totalDamage} leftWweaponItem ({item.id})");
+        }
+
+        return totalDamage;
+    }
+
+    private void AddValueFromStats(ref float totalDamage)
+    {
+        StringBuilder sb = new StringBuilder($"[MeleeDamageHandler] AddValueFromStats totalDamage {totalDamage}->");
+        for (int j = 0; j < AFFECTING_STATS.Length; j++)
+        {
+            float stat = _damagerUnit.StatsController.GetAllCurrentValueServerOnly(AFFECTING_STATS[j]);
+            if (AFFECTING_STATS[j] == Stat.STAT_TYPE.POWER)
+            {
+                if (_damagerUnit.HealthController.IsPlayer)
+                {
+                    if (_damagerUnit.MeleeManager.FNlWeapon == null || _damagerUnit.MeleeManager.FNrWeapon == null)
+                    {
+                        totalDamage += stat * STRTENGTH_INFLUENCE_ONE_HAND;
+                    }
+                    else
+                    {
+                        totalDamage += stat * STRTENGTH_INFLUENCE_TWO_HAND;
+                    }
+                }
+                else
+                {
+                    totalDamage += stat;
+                }
+            }
+        }
+        Debug.Log(sb.Append(totalDamage).ToString());
+    }
+} 
+
+// Assets\FishNet Invector\Scripts\Networked\DamageHandlers\MountainSplitterStrikeHandler.cs:
+using System.Collections.Generic;
+using _ZombieRoyale.Scripts.Core;
+using FirstGearGames.LobbyAndWorld.Demos.KingOfTheHill;
+using FishnetInvector;
+using Invector;
+using Invector.vItemManager;
+using UnityEngine;
+
+public class MountainSplitterStrikeHandler : AbstractDamageHandler
+{
+    public override void Handle(vDamage damage)
+    {
+        UnitComponents damagerUnit = UnitComponentsManager.GetUnitComponentsServerAndClient(damage.senderNetworkObjectID);
+        if (damagerUnit == null)
+            return;
+        
+        if (damage.damageValue <= 0)
+            return;
+        
+        if (damagerUnit.AbilityController != null)
+        {
+            byte abilityId = MountainSplitterStrike.ABILITY_ID;
+            if (damagerUnit.AbilityController.IsAbilityLearned(abilityId))
+            {
+                if (damage.type == vDamage.DamageType.Melee) {                    
+                    if (damage.SwingCounter == MountainSplitterStrike.SWING_COUNT_THAT_TRIGGER)
+                    {
+                        Ability ability = AbilityManager.Instance.GetAbility(abilityId);
+                        uint stacks = damagerUnit.AbilityController.LearnedAbilityDict[abilityId].Stacks;
+                        int rank = ability.CalculateRankBasedOnStacks(stacks);
+
+                        float damageMod = ability.CalculateDamageBasedOnRank(rank);
+                        damage.SetDamage(damage.damageValue * (1f + damageMod));
+                        damage.IsCriticalDamage = true;
+                        if (damagerUnit.HealthController.IsPlayer)
+                            ability.ServerAddStack(damagerUnit.AbilityController, 1);
+                        Debug.Log($"{damagerUnit.HealthController.gameObject.name} damage increased by {damageMod} due to ability id: {abilityId}; stacks: {stacks}; damage.SwingCounter: {damage.SwingCounter}", damagerUnit.HealthController.gameObject);
+                    }
+                }
+            }
+        }
+
+        base.Handle(damage);
+    }
+} 
+
+// Assets\FishNet Invector\Scripts\Networked\DamageHandlers\PassiveVampiricTouchHandler.cs:
+using _ZombieRoyale.Scripts.Core;
+using FirstGearGames.LobbyAndWorld.Demos.KingOfTheHill;
+using FishnetInvector;
+using Invector;
+using UnityEngine;
+
+public class PassiveVampiricTouchHandler : AbstractDamageHandler
+{
+    public override void Handle(vDamage damage)
+    {
+        UnitComponents damagerUnit = UnitComponentsManager.GetUnitComponentsServerAndClient(damage.senderNetworkObjectID);
+        if (damagerUnit.AbilityController != null)
+        {
+            byte abilityId = PassiveVampiricTouch.ABILITY_ID;
+            if (damagerUnit.AbilityController.IsAbilityLearned(abilityId))
+            {
+                Ability ability = AbilityManager.Instance.GetAbility(abilityId);
+                uint stacks = damagerUnit.AbilityController.LearnedAbilityDict[abilityId].Stacks;
+                int rank = ability.CalculateRankBasedOnStacks(stacks);
+
+                float healMod = ability.CalculateDamageBasedOnRank(rank);
+                float healAmount = damage.damageValue * healMod;
+                FishnetInvectorHealthController.HealData healData = new FishnetInvectorHealthController.HealData { abilityId = abilityId, amount = healAmount };
+                damagerUnit.HealthController.Heal(healData);
+                if (damagerUnit.HealthController.IsPlayer)
+                    ability.ServerAddStack(damagerUnit.AbilityController, (uint)healAmount);
+                Debug.Log($"{damagerUnit.HealthController.gameObject.name} health returned: {healMod}. Ability: {ability.GetAbilityName(rank)}(id:{abilityId}); stacks: {stacks}", damagerUnit.HealthController.gameObject);
+            }
+        }
+
+        base.Handle(damage);
+    }
+} 
+
+// Assets\FishNet Invector\Scripts\Networked\DamageHandlers\PassiveWeakSpotHandler.cs:
+using _ZombieRoyale.Scripts.Core;
+using FirstGearGames.LobbyAndWorld.Demos.KingOfTheHill;
+using Invector;
+using UnityEngine;
+
+
+public class PassiveWeakSpotHandler : AbstractDamageHandler
+{
+    public override void Handle(vDamage damage)
+    {
+        UnitComponents damagerUnit = UnitComponentsManager.GetUnitComponentsServerAndClient(damage.senderNetworkObjectID);
+        if (damagerUnit.AbilityController != null)
+        {
+            byte abilityId = PassiveWeakSpot.ABILITY_ID;
+            if (damagerUnit.AbilityController.IsAbilityLearned(abilityId))
+            {
+                if (damage.type == vDamage.DamageType.Melee)
+                {
+                    if (damage.IsCriticalDamage)
+                    {
+                        Ability ability = AbilityManager.Instance.GetAbility(abilityId);
+                        uint stacks = damagerUnit.AbilityController.LearnedAbilityDict[abilityId].Stacks;
+                        int rank = ability.CalculateRankBasedOnStacks(stacks);
+                        float damageMod = ability.CalculateDamageBasedOnRank(rank);
+                        damage.SetDamage(damage.damageValue * damageMod);
+                        if (damagerUnit.HealthController.IsPlayer)
+                            ability.ServerAddStack(damagerUnit.AbilityController, 1);
+                        Debug.Log($"{damagerUnit.HealthController.gameObject.name} damage increased by {damageMod}. Ability: {ability.GetAbilityName(rank)}(id:{abilityId}); stacks: {stacks}; damage.SwingCounter: {damage.SwingCounter}", damagerUnit.HealthController.gameObject);
+                    }
+                }
+            }
+        }
+
+        base.Handle(damage);
+    }
+} 
+
+// Assets\FishNet Invector\Scripts\Networked\DamageHandlers\PhysicalArmorDamageHandler.cs:
+using System.Collections.Generic;
+using _ZombieRoyale.Scripts.Core;
+using FirstGearGames.LobbyAndWorld.Demos.KingOfTheHill;
+using FishnetInvector;
+using Invector;
+using Invector.vItemManager;
+using UnityEngine;
+
+public class PhysicalArmorDamageHandler : AbstractDamageHandler
+{
+    private float _armor;
+
+    public PhysicalArmorDamageHandler(UnitComponents meUnit)
+    {
+        CombatEntityStat entityStat = meUnit.StatsController.GetStatByType(Stat.STAT_TYPE.PHYSICAL_ARMOR);
+        var value = entityStat.GetCurrentAmount();
+        _armor = value;
+    }
+    
+    public override void Handle(vDamage damage)
+    {
+        // Calculate damage reduction based on armor.
+        // TODO: armor should be a percentage of damage reduction.
+        if(damage.type != vDamage.DamageType.Melee) 
+            return;
+
+        float reducedDamage = Mathf.Max(damage.damageValue - (damage.damageValue * _armor), 0);
+
+        damage.SetDamage(reducedDamage);
+
+        if (damage.damageValue > 0) {
+            base.Handle(damage);
+        }
+    }
+} 
+
+// Assets\FishNet Invector\Scripts\Networked\DamageHandlers\RockSkinHandler.cs:
+using _ZombieRoyale.Scripts.Core;
+using FirstGearGames.LobbyAndWorld.Demos.KingOfTheHill;
+using Invector;
+using UnityEngine;
+
+public class RockSkinHandler : AbstractDamageHandler
+{
+    private UnitComponents _meUnit;
+    public RockSkinHandler(UnitComponents meUnit)
+    {
+        _meUnit = meUnit;
+    }
+
+    public override void Handle(vDamage damage)
+    {
+        Debug.Log($"[RockSkinHandler] Handling damage: {damage.damageValue}");
+        if (_meUnit.AbilityController != null)
+        {
+            byte abilityId = PassiveRockSkin.ABILITY_ID;
+            if (_meUnit.AbilityController.IsAbilityLearned(abilityId))
+            {
+                Ability ability = AbilityManager.Instance.GetAbility(abilityId);
+                uint stacks = _meUnit.AbilityController.LearnedAbilityDict[abilityId].Stacks;
+                int rank = ability.CalculateRankBasedOnStacks(stacks);
+                if (_meUnit.HealthController.IsPlayer)
+                {
+                    ability.ServerAddStack(_meUnit.AbilityController, (uint)damage.damageValue);
+                }
+                float damageMod = ability.CalculateDamageBasedOnRank(rank);
+                string damageBefore = damage.damageValue.ToString("F1");
+                damage.SetDamage(damage.damageValue * (1f - damageMod));
+                Debug.Log($"[RockSkinHandler] {_meUnit.HealthController.gameObject.name} damage decreased by {damageMod} due to ability: {ability.GetAbilityName(rank)}(id:{abilityId}); stacks: {stacks}; {damage.damageValue}->{damageBefore}", _meUnit.HealthController.gameObject);
+            }
+        }
+
+        base.Handle(damage);
+    }
+} 
+
+// Assets\FishNet Invector\Scripts\Networked\DamageHandlers\SkipDeadHandler.cs:
+using _ZombieRoyale.Scripts.Core;
+using Invector;
+
+public class SkipDeadHandler : AbstractDamageHandler
+{
+	private UnitComponents _meUnit;
+
+	public SkipDeadHandler(UnitComponents meUnit)
+	{
+		_meUnit = meUnit;
+	}
+    
+	public override void Handle(vDamage damage)
+	{
+		if (_meUnit.HealthController.IsDead)
+		{
+			damage.SetDamage(0f);
+		}
+		else
+		{
+			base.Handle(damage);
+		}
+	}
+} 
+
+// Assets\FishNet Invector\Scripts\Networked\DamageHandlers\ThornShellHandler.cs:
+using _ZombieRoyale.Scripts.Core;
+using FirstGearGames.LobbyAndWorld.Demos.KingOfTheHill;
+using Invector;
+using UnityEngine;
+
+public class ThornShellHandler : AbstractDamageHandler
+{
+    private UnitComponents _meUnit;
+    private int _myObjectId;
+    public ThornShellHandler(UnitComponents meUnit)
+    {
+        _meUnit = meUnit;
+        _myObjectId = _meUnit.HealthController.NetworkObject.ObjectId;
+    }
+
+    public override void Handle(vDamage damage)
+    {
+        if (_meUnit.AbilityController != null)
+        {
+            byte abilityId = PassiveThornShell.ABILITY_ID;
+            if (_meUnit.AbilityController.IsAbilityLearned(abilityId))
+            {
+                if (damage.senderNetworkObjectID != _myObjectId)
+                {
+                    Ability ability = AbilityManager.Instance.GetAbility(abilityId);
+                    uint stacks = _meUnit.AbilityController.LearnedAbilityDict[abilityId].Stacks;
+                    int rank = ability.CalculateRankBasedOnStacks(stacks);
+                    float damageBack = ability.CalculateDamageBasedOnRank(rank);
+                    vDamage damageBackV = new vDamage(damage);
+                    damageBackV.damageValue = (int)(damage.damageValue * damageBack);
+                    damageBackV.senderNetworkObjectID = _myObjectId;
+                    damageBackV.Sender = _meUnit.HealthController.transform;
+                    UnitComponents damageThisUnit = UnitComponentsManager.GetUnitComponentsServerAndClient(damage.senderNetworkObjectID);
+                    damageThisUnit.HealthController.TakeDamage(damageBackV);
+                    if (_meUnit.HealthController.IsPlayer)
+                    {
+                        ability.ServerAddStack(_meUnit.AbilityController, (uint)damageBack);
+                    }
+                    Debug.Log($"{_meUnit.AbilityController.gameObject.name} returned {damageBack.ToString("F1")} damage; Ability: {ability.GetAbilityName(rank)}(id:{abilityId}); stacks: {stacks}", _meUnit.AbilityController.gameObject);                }
+            }
+        }
+
+        base.Handle(damage);
+    }
+} 
+```
+Result: VALID.

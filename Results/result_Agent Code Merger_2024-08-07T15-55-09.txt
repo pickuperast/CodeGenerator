@@ -1,0 +1,29 @@
+csharp
+using System.Collections.Generic;
+using UnityEngine;
+
+namespace _ZombieRoyale.Scripts.InRoomSystems
+{
+    public class DungeonHolderNetworked : MonoBehaviour
+    {
+        [SerializeField] private List<RoomInfo> _roomInfos;
+        public Dictionary<int, RoomInfo> RoomInfosDict { get; private set; }
+
+        private void Awake()
+        {
+            RoomInfosDict = new Dictionary<int, RoomInfo>();
+
+            foreach (var roomInfo in _roomInfos)
+            {
+                RoomInfosDict.Add(roomInfo.RoomId, roomInfo);
+            }
+        }
+    }
+
+    [System.Serializable]
+    public class RoomInfo
+    {
+        public int RoomId;
+        public float CollapsingTime;
+    }
+}

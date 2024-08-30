@@ -1,0 +1,8 @@
+```json
+[
+  {
+    "FilePath": "-ZombieRoyale/Scripts/InRoomSystems/DungeonHolderNetworked.cs",
+    "Content": "using System.Collections.Generic;\nusing UnityEngine;\n\nnamespace _ZombieRoyale.Scripts.InRoomSystems\n{\n    public class DungeonHolderNetworked : MonoBehaviour\n    {\n        [SerializeField] private List<RoomInfo> _roomInfos;\n        public Dictionary<int, RoomInfo> RoomInfosDict { get; private set; }\n\n        private void Awake()\n        {\n            RoomInfosDict = new Dictionary<int, RoomInfo>();\n\n            foreach (var roomInfo in _roomInfos)\n            {\n                RoomInfosDict.Add(roomInfo.RoomId, roomInfo);\n            }\n        }\n    }\n\n    [System.Serializable]\n    public class RoomInfo\n    {\n        public int RoomId;\n        public float CollapsingTime;\n    }\n}"
+  }
+]
+```

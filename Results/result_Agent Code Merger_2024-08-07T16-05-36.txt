@@ -1,0 +1,49 @@
+C#
+using System.Collections.Generic;
+using UnityEditor;
+using UnityEngine;
+
+namespace _ZombieRoyale.Scripts.Dungeon.Editors
+{
+    [CustomEditor(typeof(DungeonHolderNetworked))]
+    public class DungeonHolderNetworkedEditor : Editor
+    {
+        private DungeonHolderNetworked _dungeonHolderNetworked;
+        private Dictionary<int, RoomInfoNetworkedData> _roomInfosDict;
+
+        private void OnEnable()
+        {
+            _dungeonHolderNetworked = (DungeonHolderNetworked)target;
+            _roomInfosDict = _dungeonHolderNetworked.RoomInfosDict;
+        }
+
+        public override void OnInspectorDraw()
+        {
+            base.OnInspectorDraw();
+
+            if (Application.isPlaying)
+            {
+                EditorGUILayout.Space();
+                EditorGUILayout.LabelField("Debug Information", EditorStyles.boldLabel);
+                EditorGUILayout.Space();
+
+                EditorGUILayout.LabelField($"Server Uptime: {_dungeonHolderNetworked.ServerUptime:F2} s", EditorStyles.miniLabel);
+                EditorGUILayout.Space();
+
+                if (_roomInfosDict != null && _roomInfosDict.Count > 0)
+                {
+                    EditorGUILayout.BeginVertical("box");
+                    EditorGUILayout.LabelField("Room Infos:", EditorStyles.boldLabel);
+                    foreach (var kvp in _roomInfosDict)
+                    {
+                        EditorGUILayout.BeginHorizontal();
+                        EditorGUILayout.LabelField($"Room ID: {kvp.Key}", EditorStyles.miniBoldLabel);
+                        EditorGUILayout.LabelField($"Collapsing Time: {kvp.Value.CollapsingTime:F2} s", EditorStyles.miniLabel);
+                        EditorGUILayout.EndHorizontal();
+                    }
+                    EditorGUILayout.EndVertical();
+                }
+            }
+        }
+    }
+}

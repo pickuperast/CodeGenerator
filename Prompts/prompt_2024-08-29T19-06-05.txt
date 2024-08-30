@@ -1,0 +1,406 @@
+# ROLE:
+Unity3D code architect.
+
+# GOAL:
+Write specific and detailed code for Unity3D projects.
+
+# BACKSTORY:
+You are a Unity 3D Code Writer. You write specific and detailed code for Unity 3D projects in C#.
+You provide solutions to coding problems, write scripts for game mechanics, and integrate various assets and systems.
+You have a deep understanding of Unity 3D, C#, and game development principles.
+You follow best practices for performance optimization, code organization, and version control.
+You collaborate closely with the Unity 3D Architect to ensure that the codebase aligns with the overall project architecture.
+Stick and balance between with Clean code principles and SOLID principles and 'Clean' Code, Horrible Performance - by Casey Muratori.
+Make clean and efficient code, remember that focusing exclusively on either aspect can lead to less optimal results.
+Maintaining a good understanding of the trade-offs between readability, maintainability, and performance is crucial.
+Keep in mind that NetworkBehaviour constructors are not allowed.
+Remember that [SyncObject], [SyncVar] are allowed only in NetworkBehaviour classes.
+Always provide FULL CODE of the files AT ONCE just to copy paste code into Jetbrains Rider code editor and application should run.
+DO NOT write explanations for the code.
+DO NOT skip showing fully method where code was changed.
+DO NOT provide comments in code.
+IF you generate code for Editor scripts, make sure to run game related logic only if Application.isPlaying is true.
+include file path as first row for example(without quotes): "// Assets\-ZombieRoyale\Scripts\LLM AI\Personality\Personality.cs"
+# CODE: // Assets\-ZombieRoyale\Scripts\Clients\Clothing\ClothDatabase.cs:
+ using System;
+using UnityEngine;
+
+namespace ClothSystem
+{
+    //[CreateAssetMenu(fileName = "ClothDatabase", menuName = "ScriptableObjects/ClothDatabase")]
+    public class ClothDatabase : ScriptableObject
+    {
+        public Cloth[] clothes;
+
+        public void ClearDatabase()
+        {
+            clothes = new Cloth[0];
+        }
+
+        public void AddCloth(Cloth cloth)
+        {
+            Array.Resize(ref clothes, clothes.Length + 1);
+            clothes[clothes.Length - 1] = cloth;
+        }
+    }
+} 
+
+// Assets\-ZombieRoyale\Scripts\Clients\Clothing\ClothDatabase.cs:
+ using System;
+using UnityEngine;
+
+namespace ClothSystem
+{
+    //[CreateAssetMenu(fileName = "ClothDatabase", menuName = "ScriptableObjects/ClothDatabase")]
+    public class ClothDatabase : ScriptableObject
+    {
+        public Cloth[] clothes;
+
+        public void ClearDatabase()
+        {
+            clothes = new Cloth[0];
+        }
+
+        public void AddCloth(Cloth cloth)
+        {
+            Array.Resize(ref clothes, clothes.Length + 1);
+            clothes[clothes.Length - 1] = cloth;
+        }
+    }
+} 
+
+// Assets\-ZombieRoyale\Scripts\Clients\Clothing\Editor\ClothControllerEditor.cs:
+ using UnityEngine;
+using UnityEditor;
+
+namespace ClothSystem
+{
+    [CustomEditor(typeof(ClothController))]
+    public class ClothControllerEditor : Editor
+    {
+        private static string[] _dontIncludeMe = new string[] { "Genesis9.Shape", "Genesis9Eyelashes.Shape", "Genesis9Eyes.Shape", "Genesis9Mouth.Shape", "Genesis9Tear.Shape" };
+        
+        public override void OnInspectorGUI()
+        {
+            DrawDefaultInspector();
+
+            ClothController clothController = (ClothController)target;
+
+            if (GUILayout.Button("Generate Cloth ScriptableObjects"))
+            {
+                foreach (Transform child in clothController.transform.GetComponentsInChildren<Transform>(true))
+                {
+                    if (!IsNameEndsWith(child.name, ".Shape")) continue;
+                    
+                    if (IsNeedToSkip(child)) continue;
+                    
+                    if (IsAlreadyInDatabase(child.name, clothController.clothDatabase)) continue;
+                    
+                    Cloth newCloth = CreateInstance<Cloth>();
+                    newCloth.clothName = child.name;
+
+                    string assetPath = $"Assets/-ZombieRoyale/Scripts/Clients/Clothing/Clothes/{child.name}.asset";
+                    AssetDatabase.CreateAsset(newCloth, assetPath);
+                    AssetDatabase.SaveAssets();
+
+                    clothController.clothDatabase.AddCloth(newCloth);
+                }
+
+                EditorUtility.SetDirty(clothController.clothDatabase);
+                AssetDatabase.SaveAssets();
+                AssetDatabase.Refresh();
+            }
+        }
+
+        private bool IsAlreadyInDatabase(string childName, ClothDatabase clothControllerClothDatabase)
+        {
+            foreach (Cloth cloth in clothControllerClothDatabase.clothes)
+            {
+                if (cloth.clothName == childName)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool IsNeedToSkip(Transform child)
+        {
+            if (_dontIncludeMe.Length > 0)
+            {
+                bool skip = false;
+                foreach (string dontInclude in _dontIncludeMe)
+                {
+                    if (child.name == dontInclude)
+                    {
+                        skip = true;
+                        break;
+                    }
+                }
+
+                if (skip)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private bool IsNameEndsWith(string childName, string shape)
+        {
+            return childName.EndsWith(shape);
+        }
+    }
+} 
+
+// Assets\-ZombieRoyale\Scripts\Clients\Clothing\Editor\ClothControllerEditor.cs:
+ using UnityEngine;
+using UnityEditor;
+
+namespace ClothSystem
+{
+    [CustomEditor(typeof(ClothController))]
+    public class ClothControllerEditor : Editor
+    {
+        private static string[] _dontIncludeMe = new string[] { "Genesis9.Shape", "Genesis9Eyelashes.Shape", "Genesis9Eyes.Shape", "Genesis9Mouth.Shape", "Genesis9Tear.Shape" };
+        
+        public override void OnInspectorGUI()
+        {
+            DrawDefaultInspector();
+
+            ClothController clothController = (ClothController)target;
+
+            if (GUILayout.Button("Generate Cloth ScriptableObjects"))
+            {
+                foreach (Transform child in clothController.transform.GetComponentsInChildren<Transform>(true))
+                {
+                    if (!IsNameEndsWith(child.name, ".Shape")) continue;
+                    
+                    if (IsNeedToSkip(child)) continue;
+                    
+                    if (IsAlreadyInDatabase(child.name, clothController.clothDatabase)) continue;
+                    
+                    Cloth newCloth = CreateInstance<Cloth>();
+                    newCloth.clothName = child.name;
+
+                    string assetPath = $"Assets/-ZombieRoyale/Scripts/Clients/Clothing/Clothes/{child.name}.asset";
+                    AssetDatabase.CreateAsset(newCloth, assetPath);
+                    AssetDatabase.SaveAssets();
+
+                    clothController.clothDatabase.AddCloth(newCloth);
+                }
+
+                EditorUtility.SetDirty(clothController.clothDatabase);
+                AssetDatabase.SaveAssets();
+                AssetDatabase.Refresh();
+            }
+        }
+
+        private bool IsAlreadyInDatabase(string childName, ClothDatabase clothControllerClothDatabase)
+        {
+            foreach (Cloth cloth in clothControllerClothDatabase.clothes)
+            {
+                if (cloth.clothName == childName)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool IsNeedToSkip(Transform child)
+        {
+            if (_dontIncludeMe.Length > 0)
+            {
+                bool skip = false;
+                foreach (string dontInclude in _dontIncludeMe)
+                {
+                    if (child.name == dontInclude)
+                    {
+                        skip = true;
+                        break;
+                    }
+                }
+
+                if (skip)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private bool IsNameEndsWith(string childName, string shape)
+        {
+            return childName.EndsWith(shape);
+        }
+    }
+} 
+
+// Assets\-ZombieRoyale\Scripts\Clients\Clothing\Editor\ClothControllerEditor.cs:
+ using UnityEngine;
+using UnityEditor;
+
+namespace ClothSystem
+{
+    [CustomEditor(typeof(ClothController))]
+    public class ClothControllerEditor : Editor
+    {
+        private static string[] _dontIncludeMe = new string[] { "Genesis9.Shape", "Genesis9Eyelashes.Shape", "Genesis9Eyes.Shape", "Genesis9Mouth.Shape", "Genesis9Tear.Shape" };
+        
+        public override void OnInspectorGUI()
+        {
+            DrawDefaultInspector();
+
+            ClothController clothController = (ClothController)target;
+
+            if (GUILayout.Button("Generate Cloth ScriptableObjects"))
+            {
+                foreach (Transform child in clothController.transform.GetComponentsInChildren<Transform>(true))
+                {
+                    if (!IsNameEndsWith(child.name, ".Shape")) continue;
+                    
+                    if (IsNeedToSkip(child)) continue;
+                    
+                    if (IsAlreadyInDatabase(child.name, clothController.clothDatabase)) continue;
+                    
+                    Cloth newCloth = CreateInstance<Cloth>();
+                    newCloth.clothName = child.name;
+
+                    string assetPath = $"Assets/-ZombieRoyale/Scripts/Clients/Clothing/Clothes/{child.name}.asset";
+                    AssetDatabase.CreateAsset(newCloth, assetPath);
+                    AssetDatabase.SaveAssets();
+
+                    clothController.clothDatabase.AddCloth(newCloth);
+                }
+
+                EditorUtility.SetDirty(clothController.clothDatabase);
+                AssetDatabase.SaveAssets();
+                AssetDatabase.Refresh();
+            }
+        }
+
+        private bool IsAlreadyInDatabase(string childName, ClothDatabase clothControllerClothDatabase)
+        {
+            foreach (Cloth cloth in clothControllerClothDatabase.clothes)
+            {
+                if (cloth.clothName == childName)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool IsNeedToSkip(Transform child)
+        {
+            if (_dontIncludeMe.Length > 0)
+            {
+                bool skip = false;
+                foreach (string dontInclude in _dontIncludeMe)
+                {
+                    if (child.name == dontInclude)
+                    {
+                        skip = true;
+                        break;
+                    }
+                }
+
+                if (skip)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private bool IsNameEndsWith(string childName, string shape)
+        {
+            return childName.EndsWith(shape);
+        }
+    }
+} 
+
+// Assets\-ZombieRoyale\Scripts\Clients\Clothing\Cloth.cs:
+ using UnityEngine;
+
+namespace ClothSystem
+{
+    [CreateAssetMenu(fileName = "Cloth", menuName = "Clothing/Cloth")]
+    public class Cloth : ScriptableObject
+    {
+        public int id;
+        public string clothName;
+        // Add other relevant data as needed (e.g., material, mesh reference, etc.)
+    }
+} 
+
+// Assets\-ZombieRoyale\Scripts\Clients\Clothing\ClothController.cs:
+ using System.Collections.Generic;
+using UnityEngine;
+
+namespace ClothSystem
+{
+public class ClothController : MonoBehaviour
+{
+    public ClothDatabase clothDatabase;
+    private Dictionary<string, GameObject> clothObjects = new ();
+    
+    public void InitClothObjects()
+    {
+        foreach (Cloth cloth in clothDatabase.clothes)
+        {
+            GameObject clothObject = transform.Find(cloth.clothName).gameObject;
+            clothObjects.Add(cloth.clothName, clothObject);
+        }
+    }
+
+    public void ActivateCloth(string clothName)
+    {
+        if (clothObjects.ContainsKey(clothName))
+        {
+            clothObjects[clothName].SetActive(true);
+        }
+    }
+}
+} 
+
+// Assets\-ZombieRoyale\Scripts\Clients\Clothing\ClothController.cs:
+ using System.Collections.Generic;
+using UnityEngine;
+
+namespace ClothSystem
+{
+public class ClothController : MonoBehaviour
+{
+    public ClothDatabase clothDatabase;
+    private Dictionary<string, GameObject> clothObjects = new ();
+    
+    public void InitClothObjects()
+    {
+        foreach (Cloth cloth in clothDatabase.clothes)
+        {
+            GameObject clothObject = transform.Find(cloth.clothName).gameObject;
+            clothObjects.Add(cloth.clothName, clothObject);
+        }
+    }
+
+    public void ActivateCloth(string clothName)
+    {
+        if (clothObjects.ContainsKey(clothName))
+        {
+            clothObjects[clothName].SetActive(true);
+        }
+    }
+}
+} 
+
+
+
+# TASK: Update ClothControllerEditor to find recursively

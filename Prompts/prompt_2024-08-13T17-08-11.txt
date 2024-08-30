@@ -1,0 +1,177 @@
+# ROLE:
+Unity3D code architect.
+
+# GOAL:
+Write specific and detailed code for Unity3D projects.
+
+# BACKSTORY:
+You are a Unity 3D Code Writer. You write specific and detailed code for Unity 3D projects in C#.
+You provide solutions to coding problems, write scripts for game mechanics, and integrate various assets and systems.
+You have a deep understanding of Unity 3D, C#, and game development principles.
+You follow best practices for performance optimization, code organization, and version control.
+You collaborate closely with the Unity 3D Architect to ensure that the codebase aligns with the overall project architecture.
+Stick and balance between with Clean code principles and SOLID principles and 'Clean' Code, Horrible Performance - by Casey Muratori.
+Make clean and efficient code, remember that focusing exclusively on either aspect can lead to less optimal results.
+Maintaining a good understanding of the trade-offs between readability, maintainability, and performance is crucial.
+Keep in mind that NetworkBehaviour constructors are not allowed.
+Remember that [SyncObject], [SyncVar] are allowed only in NetworkBehaviour classes.
+Always provide FULL CODE of the file just to copy paste code and application should run.
+DO NOT write explanations for the code.
+DO NOT skip showing fully method where code was changed.
+DO NOT provide comments in code.
+IF you generate code for Editor scripts, make sure to run game related logic only if Application.isPlaying is true.
+include file path as first row for example(without quotes): "// Assets\-ZombieRoyale\Scripts\LLM AI\Personality\Personality.cs"
+# CODE: // Assets\FishNet Invector\Scripts\Non-networked\Editor\MeleeAttackDataLibraryEditor.cs:
+ using System.Collections.Generic;
+using FishNet_Invector.Scripts.Non_networked;
+using UnityEditor;
+using UnityEngine;
+
+namespace Custom.Scripts.Melee
+{
+    [CustomEditor(typeof(MeleeAttackDataLibrary))]
+    public class MeleeAttackDataLibraryEditor : Editor
+    {
+        private string jsonInput = "";
+
+        public override void OnInspectorGUI()
+        {
+            // Get a reference to the MeleeAttackDataLibrary scriptable object
+            MeleeAttackDataLibrary meleeAttackDataLibrary = (MeleeAttackDataLibrary)target;
+
+            CheckAndAddMissingMeleeAttackData(meleeAttackDataLibrary);
+            // JSON input area
+            EditorGUILayout.LabelField("Import JSON Data");
+            jsonInput = EditorGUILayout.TextArea(jsonInput, GUILayout.Height(100));
+
+            if (GUILayout.Button("Import JSON"))
+            {
+                ImportJsonData(meleeAttackDataLibrary);
+            }
+            // Draw the default inspector
+            DrawDefaultInspector();
+
+            // Apply the modified properties
+            serializedObject.ApplyModifiedProperties();
+        }
+
+        private void ImportJsonData(MeleeAttackDataLibrary meleeAttackDataLibrary)
+        {
+            meleeAttackDataLibrary.meleeAttacks.RemoveAll(x => x == null);
+            
+            List<MeleeAttackData> importedDataList = Newtonsoft.Json.JsonConvert.DeserializeObject<List<MeleeAttackData>>(jsonInput);
+            Dictionary<int, SlashEffect> existingSlashes = meleeAttackDataLibrary.slashEffectLibrary.GetDictionary();
+            if (importedDataList != null && importedDataList.Count > 0)
+            {
+                // Dictionary to quickly look up existing attack data by animation name
+                Dictionary<string, MeleeAttackData> meleeAttackDataDictionary = new Dictionary<string, MeleeAttackData>();
+                foreach (var attackData in meleeAttackDataLibrary.meleeAttacks)
+                {
+                    meleeAttackDataDictionary[attackData.animationName] = attackData;
+                }
+
+                foreach (var importedData in importedDataList)
+                {
+                    if (meleeAttackDataDictionary.TryGetValue(importedData.animationName, out MeleeAttackData existingData))
+                    {
+                        // Update existing data with imported data
+                        existingData.speedCurve = importedData.speedCurve;
+                        existingData.startEndDamage = importedData.startEndDamage;
+                        existingData.damageMultiplier = importedData.damageMultiplier;
+                        existingData.attackId = importedData.attackId;
+                        foreach (var slashEffect in importedData.slashEffects)
+                        {
+                            if (existingSlashes.TryGetValue(slashEffect.slashID, out SlashEffect existingSlash))
+                            {
+                                existingSlash.slashRotation = slashEffect.slashRotation;
+                                existingSlash.slashStartTimeNormalized = slashEffect.slashStartTimeNormalized;
+                                existingSlash.slashHeight = slashEffect.slashHeight;
+                                existingSlash.slashDuration = slashEffect.slashDuration;
+                            }
+                            else
+                            {
+                                Debug.Log($"No matching SlashEffect found for slash ID: {slashEffect.slashID}. Creating new SlashEffect.");
+                                SlashEffect newSlashEffect = ScriptableObject.CreateInstance<SlashEffect>();
+                                newSlashEffect.name = $"SlashEffect_{importedData.animationName}_{slashEffect.slashID}";
+                                newSlashEffect.slashID = slashEffect.slashID;
+                                newSlashEffect.slashRotation = slashEffect.slashRotation;
+                                newSlashEffect.slashStartTimeNormalized = slashEffect.slashStartTimeNormalized;
+                                newSlashEffect.slashHeight = slashEffect.slashHeight;
+                                newSlashEffect.slashDuration = slashEffect.slashDuration;
+                                meleeAttackDataLibrary.slashEffectLibrary.slashEffects.Add(newSlashEffect);
+                            }
+                        }
+                        existingData.swingSounds = importedData.swingSounds;
+
+                        EditorUtility.SetDirty(existingData);
+                        
+                        // Update the animation events
+                        if (existingData.animationClip == null)
+                        {
+                            Debug.LogWarning($"No animation clip found for animation name: {importedData.animationName}");
+                            continue;
+                        }
+
+                        // Find attached Animator component and FNvMeleeManager
+                        var manager = FindObjectOfType<AttackListener>();
+                        if (manager == null)
+                        {
+                            Debug.LogError("AttackListener component not found on Animator");
+                            continue;
+                        }
+
+                        AnimationEventUtility.UpdateAnimationEvents(existingData.animationClip, existingData.startEndDamage, manager, existingData.attackId);
+                    }
+                    else
+                    {
+                        Debug.LogWarning($"No matching MeleeAttackData found for animation name: {importedData.animationName}");
+                    }
+                }
+                serializedObject.Update();
+                Debug.Log("JSON data imported successfully.");
+            }
+        }
+        private void CheckAndAddMissingMeleeAttackData(MeleeAttackDataLibrary meleeAttackDataLibrary)
+        {
+            string libraryPath = AssetDatabase.GetAssetPath(meleeAttackDataLibrary);
+            string parentDirectory = System.IO.Path.GetDirectoryName(libraryPath);
+            
+            string[] allAssetPaths = AssetDatabase.FindAssets("t:MeleeAttackData", new[] { parentDirectory });
+            List<MeleeAttackData> existingDataList = meleeAttackDataLibrary.meleeAttacks;
+
+            foreach (string assetPath in allAssetPaths)
+            {
+                string fullPath = AssetDatabase.GUIDToAssetPath(assetPath);
+                MeleeAttackData data = AssetDatabase.LoadAssetAtPath<MeleeAttackData>(fullPath);
+                if (!existingDataList.Contains(data))
+                {
+                    existingDataList.Add(data);
+                    EditorUtility.SetDirty(meleeAttackDataLibrary);
+                }
+            }
+        }
+        
+    }
+}
+ 
+
+// Assets\-ZombieRoyale\Scripts\SlashEffectLibrary.cs:
+ using System.Collections.Generic;
+using System.Linq;
+using UnityEngine;
+
+[CreateAssetMenu(fileName = "SlashEffectLibrary", menuName = "ScriptableObjects/SlashEffectLibrary")]
+public class SlashEffectLibrary : ScriptableObject
+{
+    public List<SlashEffect> slashEffects;
+
+    public Dictionary<int, SlashEffect> GetDictionary()
+    {
+        return slashEffects.ToDictionary(effect => effect.slashID, effect => effect);
+    }
+}
+ 
+
+
+
+# TASK: add method to SlashEffectLibrary to create new SlashEffect scriptableObject in same folder and add to list

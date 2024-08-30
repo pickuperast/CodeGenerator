@@ -1,0 +1,415 @@
+# ROLE:
+Unity3D code architect.
+
+# GOAL:
+Write specific and detailed code for Unity3D projects.
+
+# BACKSTORY:
+You are a Unity 3D Code Writer. You write specific and detailed code for Unity 3D projects in C#.
+You provide solutions to coding problems, write scripts for game mechanics, and integrate various assets and systems.
+You have a deep understanding of Unity 3D, C#, and game development principles.
+You follow best practices for performance optimization, code organization, and version control.
+You collaborate closely with the Unity 3D Architect to ensure that the codebase aligns with the overall project architecture.
+Stick and balance between with Clean code principles and SOLID principles and 'Clean' Code, Horrible Performance - by Casey Muratori.
+Make clean and efficient code, remember that focusing exclusively on either aspect can lead to less optimal results.
+Maintaining a good understanding of the trade-offs between readability, maintainability, and performance is crucial.
+Keep in mind that NetworkBehaviour constructors are not allowed.
+Remember that [SyncObject], [SyncVar] are allowed only in NetworkBehaviour classes.
+Always provide FULL CODE of the file just to copy paste code and application should run.
+DO NOT write explanations for the code.
+DO NOT skip showing fully method where code was changed.
+DO NOT provide comments in code.
+# CODE: // Assets\-ZombieRoyale\Scripts\Clients\LightLOD\LightLOD.cs:
+ using System;
+using System.Collections;
+using System.Collections.Generic;
+using FishnetInvector;
+using UnityEngine;
+using UnityEngine.Events;
+using UnityEngine.Rendering;
+using UnityEngine.Serialization;
+
+namespace LlamaSoftware.Utilities
+{
+    [RequireComponent(typeof(Light))]
+    public class LightLOD : MonoBehaviour
+    {
+        [SerializeField] private new Light light;
+        [SerializeField]
+        [Tooltip("For static (uncontrolled by script) lights, this should be true. If you have interactable lights, you should also adjust this with light.enabed")]
+        public bool LightShouldBeOn = true;
+        [SerializeField]
+        [Tooltip("The lower you set this, the faster the light will respond to player locations, and the higher the CPU usage")]
+        [Range(0, 1f)]
+        private float UpdateDelay = 0.1f;
+        //Replace this with your "Player" object
+        private List<LightLODCamera> LODCameras = new ();
+        [SerializeField]
+        public List<LODAdjustment> ShadowQualityLods;
+        
+        [Header("Debug info")]
+        [SerializeField]
+        [Tooltip("For Debugging - If you check this, the light color will be changed to the debug color defined on each LOD quality")]
+        private bool ShowLightColorAsDebugColor;
+        [SerializeField]
+        [Tooltip("For Debugging - displays how far player is from the light source")]
+        private float DistanceFromPlayer;
+        [SerializeField]
+        [Tooltip("For Debugging - displays if the Light's Shadow Resolution is clamped to Quality Settings")]
+        private bool IsClamped;
+        [FormerlySerializedAs("LOD")] [SerializeField]
+        private int _lod;
+        private Color CurrentDebugColor;
+        private LightShadows DesiredLightShadowQuality;
+        private LightShadowResolution InspectorShadowResolution;
+        private bool InitiallyOn;
+
+        private LightLODCamera FirstActiveCamera;
+        private int index;
+        private string WarningMessage = "Shadow Resolution is clamped to: {0}, but no Light LOD step matches this quality!";
+        private bool _isNeedCalculation = true;
+        public Action<int> OnLightLODChanged;
+        public UnityEvent OnLightLod0Activated;
+        public UnityEvent OnLightLod1Activated;
+        public UnityEvent OnLightLod2Activated;
+        public UnityEvent OnLightLod3Activated;
+        public UnityEvent OnLightLod4Activated;
+
+        private void OnValidate()
+        {
+            AssignComponentsIfRequired();
+        }
+
+        private void AssignComponentsIfRequired()
+        {
+            light ??= GetComponent<Light>();
+        }
+
+        private void Awake()
+        {
+            AssignComponentsIfRequired();
+            DesiredLightShadowQuality = light.shadows;
+            InspectorShadowResolution = light.shadowResolution;
+            InitiallyOn = light.enabled;
+            //StartCoroutine(CameraCatcher());
+        }
+
+        private IEnumerator CameraCatcher()
+        {
+            while (LODCameras.Count == 0)
+            {
+                LODCameras = new List<LightLODCamera>(GameObject.FindObjectsOfType<LightLODCamera>());
+                yield return new WaitForSeconds(1f);
+            }
+            
+            foreach (var lodCamera in LODCameras)
+            {
+                lodCamera.OnCameraMoved += LightLODCamera_OnCameraMoved;
+            }
+        }
+
+        public void InitForLocalPlayer(FNvThirdPersonCamera tpCamera)
+        {
+            tpCamera.LodCamera.OnCameraMoved += LightLODCamera_OnCameraMoved;
+        }
+
+        private void LightLODCamera_OnCameraMoved()
+        {
+            _isNeedCalculation = true;
+        }
+
+        private void OnEnable()
+        {
+            StartCoroutine(AdjustLODQuality());
+        }
+
+#if UNITY_EDITOR
+        private void Update()
+        {
+            if (LODCameras.Count == 0)
+                return;
+            
+            FirstActiveCamera = FindFirstActiveCamera();
+            if (FirstActiveCamera != null)
+            {
+                CurrentDebugColor = ShadowQualityLods[_lod].DebugColor;
+
+                Debug.DrawLine(transform.position, LODCameras[index].transform.position, CurrentDebugColor);
+            }
+        }
+#endif
+
+        IEnumerator AdjustLODQuality()
+        {
+            float delay = UpdateDelay + UpdateDelay == 0 ? UpdateDelay : UnityEngine.Random.value / 20f; //this randomization is to prevent all lights updating at the same time causing frame spikes
+            int i = 0;
+            int DesiredQuality;
+            LODAdjustment ClampedLOD;
+            WaitForSeconds Wait = new WaitForSeconds(delay);
+
+            while (true)
+            {
+                FirstActiveCamera = FindFirstActiveCamera();
+                
+                if (!_isNeedCalculation) {
+                    yield return Wait;
+                    continue;
+                }
+                
+                if (FirstActiveCamera != null) // If first active camera is null, no cameras with LightLODCamera are active, so we will default to on, unless it should be on
+                {
+                    if (LightShouldBeOn)
+                    {
+                        //DistanceFromPlayer = Vector3.Distance(transform.position, FirstActiveCamera.transform.position);
+                        DistanceFromPlayer = Vector3.SqrMagnitude(FirstActiveCamera.transform.position - transform.position);
+
+                        _isNeedCalculation = false;
+                        //Debug.Log($"[LightLOD] DistanceFromPlayer: {DistanceFromPlayer}", gameObject);
+                        for (i = 0; i < ShadowQualityLods.Count; i++)
+                        {
+                            if ((DistanceFromPlayer > ShadowQualityLods[i].DistanceRange.x && DistanceFromPlayer <= ShadowQualityLods[i].DistanceRange.y) || i == ShadowQualityLods.Count - 1)
+                            {
+                                UpdateLodValue(i);
+                                if (ShadowQualityLods[i].CastNoShadows)
+                                {
+                                    light.shadows = LightShadows.None;
+                                    if (ShowLightColorAsDebugColor)
+                                    {
+                                        light.color = ShadowQualityLods[i].DebugColor;
+                                    }
+                                }
+                                else
+                                {
+                                    light.shadows = ShadowQualityLods[i].LightShadows;
+                                    light.enabled = true;
+                                    //respect quality settings, do not go higher than what they have defined.
+                                    if (QualitySettings.shadowResolution <= ShadowQualityLods[i].ShadowResolution)
+                                    {
+                                        IsClamped = true;
+
+                                        DesiredQuality = (int)QualitySettings.shadowResolution;
+                                        light.shadowResolution = (LightShadowResolution)DesiredQuality;
+
+                                        if (ShowLightColorAsDebugColor)
+                                        {
+                                            ClampedLOD = FindMatchingShadowQualityIndex(QualitySettings.shadowResolution);
+                                            if (ClampedLOD == null)
+                                            {
+                                                Debug.LogWarning(string.Format(WarningMessage, QualitySettings.shadowResolution.ToString()));
+                                            }
+                                            else
+                                            {
+                                                light.color = ClampedLOD.DebugColor;
+                                            }
+                                        }
+                                    }
+                                    else
+                                    {
+                                        IsClamped = false;
+
+                                        light.shadowResolution = (LightShadowResolution)ShadowQualityLods[i].ShadowResolution;
+
+                                        if (ShowLightColorAsDebugColor)
+                                        {
+                                            light.color = ShadowQualityLods[i].DebugColor;
+                                        }
+                                    }
+                                }
+
+                                break;
+                            }
+                        }
+                    }
+                    else
+                    {
+                        light.enabled = false;
+                        UpdateLodValue(0);
+                    }
+                }
+                else if (InitiallyOn)
+                {
+                    light.enabled = true;
+                    light.shadows = DesiredLightShadowQuality;
+                    light.shadowResolution = InspectorShadowResolution;
+                    UpdateLodValue(0);
+                }
+
+                yield return Wait;
+            }
+        }
+
+        private LightLODCamera FindFirstActiveCamera()
+        {
+            for (index = 0; index < LODCameras.Count; index++)
+            {
+                if (LODCameras[index] == null)
+                {
+                    LODCameras = new List<LightLODCamera>(GameObject.FindObjectsOfType<LightLODCamera>());
+                }else{
+                    if (LODCameras[index].Camera.enabled && LODCameras[index].gameObject.activeInHierarchy)
+                    {
+                        return LODCameras[index];
+                    }
+                }
+            }
+
+            return null;
+        }
+
+        private void UpdateLodValue(int value)
+        {
+            if (value != _lod)
+            {
+                _lod = value;
+                OnLightLODChanged?.Invoke(value);
+                switch (value)
+                {
+                    case 0:
+                        OnLightLod0Activated?.Invoke();
+                        break;
+                    case 1:
+                        OnLightLod1Activated?.Invoke();
+                        break;
+                    case 2:
+                        OnLightLod2Activated?.Invoke();
+                        break;
+                    case 3:
+                        OnLightLod3Activated?.Invoke();
+                        break;
+                    case 4:
+                        OnLightLod4Activated?.Invoke();
+                        break;
+                    default:
+                        break;
+                }
+            }
+        }
+
+        private LODAdjustment FindMatchingShadowQualityIndex(ShadowResolution Quality)
+        {
+            for (index = 0; index < ShadowQualityLods.Count; index++)
+            {
+                if (ShadowQualityLods[index].ShadowResolution.Equals(Quality))
+                {
+                    return ShadowQualityLods[index];
+                }
+            }
+
+            return null;
+        }
+
+        [Serializable]
+        public class LODAdjustment
+        {
+            public Vector2 DistanceRange;
+            public ShadowResolution ShadowResolution;
+            public LightShadows LightShadows;
+            public bool CastNoShadows;
+            public Color DebugColor;
+            public bool IsFlickerLight;
+        }
+    }
+}
+ 
+
+// Assets\-ZombieRoyale\Scripts\Clients\LightLOD\LightLODCamera.cs:
+ using System;
+using System.Collections;
+using UnityEngine;
+
+namespace LlamaSoftware.Utilities
+{
+    [RequireComponent(typeof(Camera))]
+    public class LightLODCamera : MonoBehaviour
+    {
+        [HideInInspector]
+        public Camera Camera;
+
+        public Action OnCameraMoved;
+
+        private Vector3 previousCameraPosition;
+
+        private void Awake()
+        {
+            Camera = GetComponent<Camera>();
+            previousCameraPosition = transform.position;
+            StartCoroutine(TimedUpdate());
+        }
+
+        private IEnumerator TimedUpdate()
+        {
+            WaitForSeconds wait = new WaitForSeconds(0.1f);
+            
+            while (true)
+            {
+                // Check if the camera's position has changed approximately
+                if (!Mathf.Approximately(Camera.transform.position.x, previousCameraPosition.x) ||
+                    !Mathf.Approximately(Camera.transform.position.y, previousCameraPosition.y) ||
+                    !Mathf.Approximately(Camera.transform.position.z, previousCameraPosition.z))
+                {
+                    // Invoke the OnCameraMoved action
+                    OnCameraMoved?.Invoke();
+
+                    // Update the previous camera position
+                    previousCameraPosition = Camera.transform.position;
+                }
+
+                yield return wait;
+            }
+        }
+    }
+}
+ 
+
+// Assets\-ZombieRoyale\Scripts\Clients\LightLOD\LightLODCamera.cs:
+ using System;
+using System.Collections;
+using UnityEngine;
+
+namespace LlamaSoftware.Utilities
+{
+    [RequireComponent(typeof(Camera))]
+    public class LightLODCamera : MonoBehaviour
+    {
+        [HideInInspector]
+        public Camera Camera;
+
+        public Action OnCameraMoved;
+
+        private Vector3 previousCameraPosition;
+
+        private void Awake()
+        {
+            Camera = GetComponent<Camera>();
+            previousCameraPosition = transform.position;
+            StartCoroutine(TimedUpdate());
+        }
+
+        private IEnumerator TimedUpdate()
+        {
+            WaitForSeconds wait = new WaitForSeconds(0.1f);
+            
+            while (true)
+            {
+                // Check if the camera's position has changed approximately
+                if (!Mathf.Approximately(Camera.transform.position.x, previousCameraPosition.x) ||
+                    !Mathf.Approximately(Camera.transform.position.y, previousCameraPosition.y) ||
+                    !Mathf.Approximately(Camera.transform.position.z, previousCameraPosition.z))
+                {
+                    // Invoke the OnCameraMoved action
+                    OnCameraMoved?.Invoke();
+
+                    // Update the previous camera position
+                    previousCameraPosition = Camera.transform.position;
+                }
+
+                yield return wait;
+            }
+        }
+    }
+}
+ 
+
+
+
+# TASK: create new action OnCameraRotated and upon that event all lights that are behind the camera view should set their LODs to the last option

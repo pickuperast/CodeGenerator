@@ -1,0 +1,927 @@
+// Assets\-ZombieRoyale\Scripts\Abilities\AbilityScripts\Ability.cs:
+ using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.Linq;
+using _ZombieRoyale.Scripts.Core;
+using DuloGames.UI;
+using FishNet;
+using FishNet.Connection;
+using FishNet.Object;
+using FishnetInvector;
+using Invector;
+using UnityEngine;
+using UnityEngine.Assertions;
+
+[Serializable]
+public class Ability: NetworkBehaviour
+{
+    protected int _rank;
+    [SerializeField] protected AbilityDefinition _abilityDefinition;
+    public Buff Buff => _buff;
+    [SerializeField] protected Buff _buff;
+    [SerializeField] protected bool isPassiveSkill;
+    public static Dictionary<NetworkConnection, uint> StacksCounter { get; private set; } = new ();
+    public static Dictionary<NetworkConnection, uint> RankCounter { get; private set; } = new ();
+    public AbilityDefinition AbilityDefinition => _abilityDefinition;
+    public static Action OnAbilityLearned;
+    public Action<NetworkConnection, byte, uint> OnRankLevelUp;
+    protected string _abilityName => _abilityDefinition.Name;
+    protected GameplayManager _gameplayManager;
+    protected bool _isDebug = true;
+    protected readonly string COLOR_DURATION = "#00F0FF";
+    protected readonly string COLOR_AFFECTING_STAT = "#00F0FF";
+    protected readonly string COLOR_DAMAGE = "#ff3517";
+    protected readonly string COLOR_HEAL = "#0ec949";
+    protected readonly string COLOR_STAT = "#96e33d";
+    protected readonly string COLOR_XP = "#c3eb34";
+    protected readonly string COLOR_COOLDOWN = "#c8e609";
+
+    protected readonly Color DEBUG_SPHERE_DEFAULT_COLOR = new Color(1f, 0f, 0f, 0.5f);
+    protected readonly Color DEBUG_SPHERE_ACTIVATE_COLOR = new Color(1f, 0f, 1f, 0.5f);
+    protected Color _debugSphereColor;
+    protected bool _showDebugSphere;
+    protected Vector3 _debugSpherePos;
+    protected float _debugSphereRadius = 1f;
+
+    public override void OnStartServer()
+    {
+        base.OnStartServer();
+        InstanceFinder.TimeManager.OnTick += OnServerTick;
+    }
+
+    public override void OnStartClient()
+    {
+        base.OnStartClient();
+        InstanceFinder.TimeManager.OnTick += OnClientTick;
+    }
+
+    protected virtual void OnServerTick() { }
+
+    protected virtual void OnClientTick() { }
+
+    public override void OnStopServer()
+    {
+        base.OnStopServer();
+        InstanceFinder.TimeManager.OnTick -= OnServerTick;
+    }
+
+    public override void OnStopClient()
+    {
+        base.OnStopClient();
+        InstanceFinder.TimeManager.OnTick -= OnClientTick;
+    }
+
+    public virtual void InitAbility()
+    {
+        if (_buff != null) 
+        {
+            _buff.Init(GameplayManager.Instance);
+        }
+        else
+        {
+            Debug.LogWarning($"Buff is null during ability {_abilityName} initialization.");
+        }
+    }
+
+    public virtual float CalculateValueBasedOnStacks(uint stacks) => .01f;
+    
+    public virtual int CalculateRankBasedOnStacks(uint stacks) => 1;
+    
+    public virtual float CalculateDamageBasedOnRank(int rank) => 1;
+    
+    public virtual uint GetStacksForRank() => 1;
+    
+    public uint AddRank(NetworkConnection connection)
+    {
+        if (RankCounter.ContainsKey(connection))
+        {
+            RankCounter[connection]++;
+        }
+        else
+        {
+            RankCounter.Add(connection, 1);
+        }
+        OnRankLevelUp?.Invoke(connection, _abilityDefinition.Id, RankCounter[connection]);
+        return RankCounter[connection];
+    }
+
+    public uint ServerAddStack(FNAbilityController abilityController, uint amount)
+    {
+        if (!abilityController.LearnedAbilityDict.ContainsKey(AbilityDefinition.Id))
+        {
+            Debug.LogError($"Ability {AbilityDefinition.Name} is not learned by player {abilityController.gameObject.name}. Cannot add stacks.");
+            return 0;
+        }
+        
+        AbilityInfo targetsAbilityStats = abilityController.LearnedAbilityDict[AbilityDefinition.Id];
+        targetsAbilityStats.Stacks = Math.Max(0, targetsAbilityStats.Stacks + amount);
+        abilityController.AddOrSetAbility(targetsAbilityStats);
+        return targetsAbilityStats.Stacks;
+    }
+    
+    public uint AddStack(NetworkConnection connection)
+    {
+        if (StacksCounter.ContainsKey(connection))
+        {
+            StacksCounter[connection]++;
+        }
+        else
+        {
+            StacksCounter.Add(connection, 1);
+        }
+        
+        if (EnoughStacksToLevelup(connection))
+        {
+            StacksCounter[connection] = 0;
+            AddRank(connection);
+            return 1;
+        }
+        else
+        {
+            return 0;
+        }
+        
+        return StacksCounter[connection];
+    }
+    
+    public UISpellInfo GetUISpellInfo(byte abilityId, uint stacks)
+    {
+        UISpellInfo spellInfo = new UISpellInfo();
+        spellInfo.ID = _abilityDefinition.Id;
+        uint abilityStacksForPlayer = CharacterDataController.Instance.CharacterData.GetAbilityStacks(abilityId);
+        int abilityRankBasedOnStacks = CalculateRankBasedOnStacks(abilityStacksForPlayer);
+        spellInfo.Name = GetAbilityName(abilityRankBasedOnStacks);
+        spellInfo.Icon = _abilityDefinition.Icon;
+        spellInfo.Description = GetAbilityDescription(abilityRankBasedOnStacks, abilityStacksForPlayer);
+        if (_abilityDefinition.IsPassive)
+        {
+            spellInfo.Flags = UISpellInfo_Flags.Passive;
+        }
+        else
+        {
+            AbilityDefinition.RPGAbilityRankData rankData = _abilityDefinition.RanksDatas[0];
+
+            if (rankData != null)
+            {
+                switch (rankData.activationType)
+                {
+                    case AbilityDefinition.AbilityActivationType.Instant:
+                        spellInfo.Flags = UISpellInfo_Flags.InstantCast;
+                        break;
+                    case AbilityDefinition.AbilityActivationType.PreCastedCircle:
+                        spellInfo.Flags = UISpellInfo_Flags.PreCastCircle;
+                        break;
+                    case AbilityDefinition.AbilityActivationType.PreCastedCone:
+                        spellInfo.Flags = UISpellInfo_Flags.PreCastCone;
+                        break;
+                    case AbilityDefinition.AbilityActivationType.PreCastedAim:
+                        spellInfo.Flags = UISpellInfo_Flags.PreCastAim;
+                        break;
+                    default:
+                        spellInfo.Flags = UISpellInfo_Flags.PowerCostInPct;
+                        break;
+
+                }
+
+                spellInfo.Range = rankData.maxRange;
+                spellInfo.Cooldown = rankData.cooldown;
+
+                if (UnitComponentsManager.GetAllPlayersHeroes().Count != 0)
+                {
+                    var nob = UnitComponentsManager.GetAllPlayersHeroes().First();
+                    var unit = UnitComponentsManager.GetUnitComponents(nob);
+
+                    if (GetAbilityCastingTime(0, unit.StatsController) > 0)
+                    {
+                        spellInfo.CastTime = GetAbilityCastingTime(0, unit.StatsController);
+                    }
+                }
+
+                spellInfo.PowerCost = rankData.manaCost;
+            }
+            else
+            {
+                Debug.LogError($"Ability {spellInfo.Name} does not have rank {abilityId}. Setting default values.");
+            }
+        }
+        return spellInfo;
+    }
+
+    private bool EnoughStacksToLevelup(NetworkConnection connection)
+    {
+        return StacksCounter[connection] >= GetStacksForRank();
+    }
+
+    public virtual string GetAbilityName(int rank) => _abilityDefinition.Name;
+    public virtual string GetAbilityDescription(int rank, uint stacks) => _abilityDefinition.Description;
+    public virtual string GetAbilityDescription(int rank, FNStatsController statsController) => _abilityDefinition.persistDescription;
+    
+    public virtual float GetAbilityCastingTime(int rank, FNStatsController statsController)
+    {
+        CombatEntityStat entityStat = statsController.GetStatByType(Stat.STAT_TYPE.HASTE);
+        var value = entityStat.GetCurrentAmount();
+        var defaultCastTime = _abilityDefinition.RanksDatas[rank].castTime;
+        var castingTime = defaultCastTime * (1 / (1 + value));
+
+        return castingTime;
+    }
+
+    public virtual IEnumerator Activate(AbilityCastingData data)
+    {
+        yield return null;
+    }
+
+    [Server]
+    protected virtual void CasterBuffApply(Buff.BuffData casterBuffData, float duration = 1f)
+    {
+        Debug.Log($"{_abilityName} Applying caster buff.");
+        _buff.Activate(casterBuffData, new int[]{}, duration:duration);
+    }
+    
+    [Server]
+    public virtual void CasterRemoveBuff(Buff.BuffData casterBuffData)
+    {
+        Debug.Log($"{_abilityName} Removing caster buff.");
+        _buff.RemoveBuff(casterBuffData.ObjectId, casterBuffData.ObjectId);
+    }
+
+    protected virtual List<Collider> TargetsSelection(Transform caster) 
+    {
+        Debug.LogWarning($"{_abilityName} TargetsSelection method has not been implemented yet.");
+        throw new NotImplementedException();
+    }
+
+    [Server]
+    protected void AOEDamageTargets(int casterNetId, float radius, vDamage damage, bool isExcludeSelf = false)
+    {
+        var playerComps = UnitComponentsManager.GetUnitComponentsServerAndClient(casterNetId);
+        var targets = TargetsInSphereSelection(playerComps, radius);
+        for (int i = 0; i < targets.Count; i++) 
+        {
+            if (isExcludeSelf && targets[i] == playerComps.HealthController)
+            {
+                continue;
+            }
+            damage.receiver = targets[i].transform;
+            targets[i].TakeDamage(damage);
+
+            Debug.Log($"[{_abilityDefinition.Name}] Damage applied to {targets[i].name}");
+        }
+    }
+    
+    [Server]
+    protected List<FishnetInvectorHealthController> EnemyTargetsInSphereSelection(Vector3 pos, Buff.BuffData caster, float radius)
+    {
+        //Debug.Log($"{_abilityName} Selecting targets in sphere.");
+        List<FishnetInvectorHealthController> targets = EnemyTargetsInRadius(pos, caster, radius);
+        //Debug.Log($"{_abilityName} {targets.Count} targets found in sphere.");
+        return targets;
+    }
+    
+    [Server]
+    protected List<FishnetInvectorHealthController> TargetsExcludingTagsInSphereSelection(string[] tags, Vector3 pos, Buff.BuffData caster, float radius)
+    {
+        List<FishnetInvectorHealthController> targets = TargetsInRadiusExcludingTags(tags, pos, caster, radius);
+        return targets;
+    }
+    
+    public static List<FishnetInvectorHealthController> TargetsInRadiusExcludingTags(string[] tags, Vector3 pos, Buff.BuffData caster, float radius)
+    {
+        NativeArray<FishnetInvectorHealthController> possibleTargets = new NativeArray<FishnetInvectorHealthController>(GameplayManager.Instance.UnitCharacters.Count, Allocator.TempJob);
+        for (int i = 0; i < GameplayManager.Instance.UnitCharacters.Count; i++)
+        {
+            var targetComps = UnitComponentsManager.GetUnitComponentsServerAndClient(GameplayManager.Instance.UnitCharacters[i]);
+            possibleTargets[i] = targetComps.HealthController;
+        }
+
+        NativeArray<bool> results = new NativeArray<bool>(possibleTargets.Length, Allocator.TempJob);
+
+        var job = new CheckTargetsInRangeJob()
+        {
+            Tags = new NativeArray<FixedString32Bytes>(tags, Allocator.TempJob),
+            PossibleTargets = possibleTargets,
+            Center = pos,
+            Radius = radius,
+            Results = results
+        };
+        job.Schedule(possibleTargets.Length, 1).Complete();
+
+        List<FishnetInvectorHealthController> targets = new List<FishnetInvectorHealthController>();
+        for (int i = 0; i < possibleTargets.Length; i++)
+        {
+            if (results[i])
+            {
+                targets.Add(possibleTargets[i]);
+            }
+        }
+        
+        possibleTargets.Dispose();
+        results.Dispose();
+
+        return targets;
+    }
+
+    public static bool IsAlly(UnitComponents caster, UnitComponents target)
+    {
+        bool isCasterPlayer = caster.HealthController.CompareTag(GameplayManager.TAG_PLAYER);
+        bool isTargetPlayer = target.HealthController.CompareTag(GameplayManager.TAG_PLAYER);
+        bool isCasterEnemy = false;
+        bool isTargetEnemy = false;
+        for (int i = 0; i < GameplayManager.SERVER_AI_CONTROLLED_TAGS.Length; i++)
+        {
+            if (caster.HealthController.CompareTag(GameplayManager.SERVER_AI_CONTROLLED_TAGS[i]))
+            {
+                isCasterEnemy = true;
+            }
+            if (target.HealthController.CompareTag(GameplayManager.SERVER_AI_CONTROLLED_TAGS[i]))
+            {
+                isTargetEnemy = true;
+            }
+        }
+        
+        if (isCasterPlayer && isTargetEnemy)
+        {
+            return false;
+        }else if (isCasterEnemy && isTargetPlayer)
+        {
+            return false;
+        }else if (isCasterEnemy && isTargetEnemy)
+        {
+            return true;
+        }else if (isCasterPlayer && isTargetPlayer)
+        {
+            if (caster == target)
+                return true;
+            
+            if (GameplayManager.Instance.RoomDetails.IsTeamsMode)
+            {
+                var teamClientInstancesMembers = GameplayManager.Instance.RoomDetails.GetActiveClientsFromSameTeam(caster.NetworkObject);
+                if (teamClientInstancesMembers.Contains(target.Owner))
+                {
+                    return true;
+                }
+            }
+            else
+            {
+                return false;
+            }
+        }
+
+        return false;
+    }
+
+    public static List<FishnetInvectorHealthController> EnemyTargetsInRadius(Vector3 pos, Buff.BuffData caster, float radius)
+    {
+        List<FishnetInvectorHealthController> targets = new List<FishnetInvectorHealthController>();
+        
+        //check targets
+        foreach (var possibleTarget in GameplayManager.Instance.UnitCharacters)
+        {
+            var targetNob = UnitComponentsManager.GetUnitComponentsServerAndClient(possibleTarget).NetworkObject;
+            if (targetNob == null)
+                continue;
+            
+            if (!CommonMath.Math.IsWithinRange(pos, targetNob.transform.position, radius))
+                continue;
+            
+            var targetComps = UnitComponentsManager.GetUnitComponentsServerAndClient(possibleTarget);
+            if (targetComps == null)
+                continue;
+            
+            Buff.BuffData targetData = new Buff.BuffData(targetComps.HealthController.ObjectId, targetComps.HealthController.gameObject.tag, 0f, caster.abilityId, 0, null, null, 0);
+            if (IsNotValidTargetEnemy(caster, targetData))
+                continue;
+            
+            targets.Add(targetComps.HealthController);
+        }
+
+        return targets;
+    }
+    
+    [Server]
+    protected List<FishnetInvectorHealthController> EnemyTargetsInSphereSelection(Vector3 pos, UnitComponents caster, float radius)
+    {
+        Debug.Log($"{_abilityName} Selecting targets in sphere.");
+
+        List<FishnetInvectorHealthController> targets = new List<FishnetInvectorHealthController>();
+        
+        //check targets
+        foreach (var possibleTarget in GameplayManager.Instance.UnitCharacters)
+        {
+            var targetNob = UnitComponentsManager.GetUnitComponentsServerAndClient(possibleTarget).NetworkObject;
+            var targetComps = UnitComponentsManager.GetUnitComponentsServerAndClient(possibleTarget);
+            if (IsNotValidTargetEnemy(targetComps, caster))
+            {
+                continue;
+            }
+            if (CommonMath.Math.IsWithinRange(pos, targetNob.transform.position, radius))
+            {
+                var unitComps = UnitComponentsManager.GetUnitComponentsServerAndClient(possibleTarget);
+                targets.Add(unitComps.HealthController);
+            }
+        }
+
+        Debug.Log($"{_abilityName} {targets.Count} targets found in sphere.");
+
+        return targets;
+    }
+    
+    [Server]
+    protected List<FishnetInvectorHealthController> TargetsInSphereSelection(UnitComponents caster, float radius)
+    {
+        Debug.Log($"{_abilityName} Selecting targets in sphere.");
+
+        List<FishnetInvectorHealthController> targets = new List<FishnetInvectorHealthController>();
+        
+        //check targets
+        foreach (var target in GameplayManager.Instance.UnitCharacters)
+        {
+            var targetNob = UnitComponentsManager.GetUnitComponentsServerAndClient(target).NetworkObject;
+            if (CommonMath.Math.IsWithinRange(caster.HealthController.transform.position, targetNob.transform.position, radius))
+            {
+                var targetComps = UnitComponentsManager.GetUnitComponentsServerAndClient(target);
+                targets.Add(targetComps.HealthController);
+            }
+        }
+
+        Debug.Log($"{_abilityName} {targets.Count} targets found in sphere.");
+
+        return targets;
+    }
+    
+    [Server]
+    protected List<FishnetInvectorHealthController> CorrectTargetsInSphereSelection(UnitComponents caster, float radius)
+    {
+        Debug.Log($"{_abilityName} Selecting targets in sphere.");
+
+        var targets = TargetsInSphereSelection(caster, radius);
+        
+        foreach (var target in targets)
+        {
+            if (!IsCorrectTarget(_rank, caster, target.UnitComponents))
+            {
+                targets.Remove(target);
+            }
+        }
+        
+        Debug.Log($"{_abilityName} {targets.Count} targets found in sphere.");
+
+        return targets;
+    }
+    
+    [ObserversRpc]
+    protected void RpcShowEffectForObservers(int targetNetId, int abilityId, int rank, float timeout)
+    {
+        Debug.Log($"{_abilityName} Showing effect for observers.");
+
+        GameplayManager.Instance.StartCoroutine(ShowEffectOnTarget(targetNetId, abilityId, rank, timeout));
+    }
+    
+    protected virtual IEnumerator ShowEffectOnTarget(int targetNetId, int abilityId, int rank, float timeout)
+    {
+        Debug.Log($"{_abilityName} Showing effect on target.");
+
+        var targetComps = UnitComponentsManager.GetUnitComponentsServerAndClient(targetNetId);
+
+        if(targetComps == null)
+        {
+            Debug.LogError($"{_abilityName} Target components are null. Cannot show effect on target.");
+            yield break;
+        }
+
+        List<GameObject> effects = new List<GameObject>(); 
+        foreach (var attachementPoint in _abilityDefinition.RanksDatas[rank].FXattachmentPoints)
+        {
+            Assert.IsNotNull(_abilityDefinition.RanksDatas[rank].hitEffect, $"Hit effect is null for {_abilityName}.");
+            Transform pointTransform = targetComps.AttachmentPoints.GetAttachmentPoint(attachementPoint);
+            GameObject effect = Instantiate(_abilityDefinition.RanksDatas[rank].hitEffect, pointTransform.position + Vector3.up, Quaternion.identity, GameplayManager.Instance.transform);
+            effect.transform.SetParent(pointTransform);
+            effects.Add(effect);
+        }
+
+        yield return new WaitForSeconds(timeout);
+        foreach (var effect in effects)
+        {
+            Destroy(effect, timeout);
+        }
+    }
+    
+    public static bool IsNotValidTargetEnemy(Buff.BuffData casterData, Buff.BuffData targetData)
+    {
+        if (casterData.ObjectId == targetData.ObjectId)
+        {
+            return true;
+        }
+
+        int casterTeam = GameplayManager.Instance.GetUnitTeamId(casterData.ObjectId);
+        int targetTeam = GameplayManager.Instance.GetUnitTeamId(targetData.ObjectId);
+        if (casterData.Tag == GameplayManager.TAG_PLAYER)
+        {
+            if (casterTeam == targetTeam)
+            {
+                return true;
+            }
+            return false;
+        }else if (targetData.Tag == GameplayManager.SERVER_AI_CONTROLLED_TAGS[GameplayManager.MONSTER_TAG_ID])
+        {
+            if (casterData.Tag == GameplayManager.SERVER_AI_CONTROLLED_TAGS[GameplayManager.MONSTER_TAG_ID])
+            {
+                return true;
+            }
+            return false;
+        }
+
+        return false;
+    }
+
+    protected bool IsNotValidTargetEnemy(UnitComponents target, UnitComponents caster)
+    {
+        //Debug.Log($"{_abilityName} Checking if target is valid.");
+        if (target == null)
+            return true;
+        
+        if (target == caster)
+        {
+            //Debug.Log($"{_abilityName} Target is the same as caster. Invalid target.");
+            return true;
+        }
+
+        var targetHealthController = target.HealthController;
+        if (targetHealthController == null)
+        {
+            return true;
+        }
+        if (targetHealthController.CompareTag(GameplayManager.TAG_PLAYER))
+        {
+            //Debug.Log($"{_abilityName} Target is a player. Valid target.");
+            return false;
+        }else if (targetHealthController.CompareTag("Enemy"))
+        {
+            //Debug.Log($"{_abilityName} Target is an enemy. Valid target.");
+            if (caster.HealthController.CompareTag("Enemy"))
+            {
+                return true;
+            }
+            return false;
+        }
+
+        //Debug.Log($"{_abilityName} Target does not have a Player or Enemy tag. Invalid target.");
+
+        return false;
+    }
+    
+    protected void DrawDebugSphere(Vector3 pos, float radius)
+    {
+        _debugSpherePos = pos;
+        _debugSphereRadius = radius;
+        _showDebugSphere = true;
+        _debugSphereColor = DEBUG_SPHERE_ACTIVATE_COLOR;
+        StartCoroutine(ResetDebugSphereColorAfterDelay(0.3f));
+    }
+    
+    protected IEnumerator ResetDebugSphereColorAfterDelay(float delay)
+    {
+        yield return new WaitForSeconds(delay);
+        _debugSphereColor = DEBUG_SPHERE_DEFAULT_COLOR;
+        _showDebugSphere = false;
+    }
+    
+    public virtual float CalcAmount(FNStatsController statsController) {
+        return 1f;
+    }
+    
+    public virtual float CalcDuration(FNStatsController statsController) {
+        return 1f;
+    }
+    
+    public bool IsCorrectTarget(int rank, UnitComponents caster, UnitComponents target)
+    {
+        if (AbilityDefinition.RanksDatas[rank].CanHitSelf)
+        {
+            if (caster == target)
+                return true;
+        }
+        bool isAlly = IsAlly(caster, target);
+        
+        if (AbilityDefinition.RanksDatas[rank].CanHitEnemy)
+        {
+            if (!isAlly)
+            {
+                return true;
+            }
+        }
+
+        if (AbilityDefinition.RanksDatas[rank].CanHitAlly)
+        {
+            if (isAlly)
+            {
+                return true;
+            }
+        }
+        
+        return true;
+    }
+
+    public NetworkConnection[] FindNearbyPlayers(Vector3 casterTransformPosition, float distanceSquared)
+    {
+        var playerHeroes = UnitComponentsManager.GetAllPlayersHeroes();
+        List<NetworkConnection> connections = new List<NetworkConnection>();
+        foreach (var hero in playerHeroes)
+        {
+            if (Vector3.SqrMagnitude(hero.transform.position - casterTransformPosition) < distanceSquared)
+            {
+                connections.Add(hero.Owner);
+            }
+        }
+        return connections.ToArray();
+    }
+
+    public class VfxOnClientData/* 48 bytes */
+    {
+        public Vector3 forwardDirection;/* 3×4=12 bytes */
+        public Vector3 waveStartPosition;/* 3×4=12 bytes */
+        public Quaternion rotation;/* 4×4=16 bytes */
+        public float duration;/*  4 bytes */
+        public int rank;/*  4 bytes */
+
+        public VfxOnClientData(){}
+        
+        public VfxOnClientData(Vector3 forwardDirection, Vector3 waveStartPosition, Quaternion rotation, float duration, int rank)
+        {
+            this.forwardDirection = forwardDirection;
+            this.waveStartPosition = waveStartPosition;
+            this.rotation = rotation;
+            this.duration = duration;
+            this.rank = rank;
+        }
+    }
+
+    public class VfxParticle
+    {
+        public int senderId;
+        public int rank;
+        public Transform transform;
+        public ColliderInvoker collider;
+        public Vector3 startPosition;
+        public Vector3 endPosition;
+        public float duration;
+        public double elapsedTime;
+        public List<FishnetInvectorHealthController> alreadyDamaged = new ();
+        
+        public VfxParticle(int senderId, int rank, Transform transform, ColliderInvoker collider, Vector3 startPosition, Vector3 endPosition, float duration, double elapsedTime, List<FishnetInvectorHealthController> alreadyDamaged)
+        {
+            this.senderId = senderId;
+            this.transform = transform;
+            this.collider = collider;
+            this.startPosition = startPosition;
+            this.endPosition = endPosition;
+            this.duration = duration;
+            this.elapsedTime = elapsedTime;
+            this.alreadyDamaged = alreadyDamaged;
+            this.rank = rank;
+        }
+    }
+
+#if UNITY_EDITOR
+    protected void OnDrawGizmos()
+    {
+        if (_showDebugSphere)
+        {
+            Gizmos.color = _debugSphereColor;
+            Gizmos.DrawSphere(_debugSpherePos, _debugSphereRadius);
+        }
+    }
+#endif
+} 
+
+// Assets\-ZombieRoyale\Scripts\InRoomSystems\Gameplay\RespawnManager.cs:
+ using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.Text;
+using DungeonScrollerCore;
+using FishNet.Object;
+using Pathfinding;
+using Unity.Collections;
+using Unity.Jobs;
+using UnityEngine;
+using UnityEngine.Serialization;
+using Zomb.Creatures.Module;
+
+
+namespace _ZombieRoyale.Scripts.Core
+{
+public struct SearchNearestCreaturesToEachPlayerJob : IJobParallelFor
+{
+    //Unmanaged types:
+    //sbyte, byte, short, ushort, int, uint, long, ulong, char, float, double, decimal, or bool, Any enum type, Any pointer type
+    //NativeStream example: https://github.com/Unity-Technologies/SimpleUIDemo/blob/master/Tiny3D/Library/PackageCache/com.unity.collections%400.3.0-preview.0/Unity.Collections.Tests/NativeStreamTests.cs
+
+    private static readonly float DISTANCE_TO_SPAWN_AI_SQUARED = 200f;//14.1f
+    private static readonly float DISTANCE_TO_DESPAWN_AI_SQUARED = 1600f;//40f
+    private static readonly float DISTANCE_TO_BLOCK_POINTS_SQUARED = 225f;
+    // Jobs declare all data that will be accessed in the job
+    // By declaring it as read only, multiple jobs are allowed to access the data in parallel
+    [ReadOnly]
+    public NativeArray<SpawnPointForJob> JSpawnPointsArray;
+    [ReadOnly]
+    public NativeArray<Vector3> PlayersPosArray;
+    
+    
+    public NativeList<ushort>.ParallelWriter ResultPointsToSpawn;
+    public NativeList<ushort>.ParallelWriter ResultPointsToDespawn;
+    public bool IsSpawnBasedOnPlayers;
+    
+
+    public void Execute(int index)
+    {
+        var spawnPoint = JSpawnPointsArray[index];
+        if (spawnPoint.isUsed)
+        {
+            byte playerNearby = 0;
+            for (int i = 0; i < PlayersPosArray.Length; i++)
+            {
+                var playerPos = PlayersPosArray[i];
+                float distSquared = (playerPos - spawnPoint.position).sqrMagnitude;
+                if (distSquared < DISTANCE_TO_DESPAWN_AI_SQUARED)
+                    playerNearby++;
+            }
+            if (playerNearby > 0)
+                return;
+                    
+            ResultPointsToDespawn.AddNoResize(spawnPoint.id);
+        }
+        else
+        {
+            for (int i = 0; i < PlayersPosArray.Length; i++)
+            {
+                var playerPos = PlayersPosArray[i];
+                float distSquared = (playerPos - spawnPoint.position).sqrMagnitude;
+                if (distSquared > DISTANCE_TO_SPAWN_AI_SQUARED)
+                    continue;
+                    
+                ResultPointsToSpawn.AddNoResize(spawnPoint.id);
+                break;
+            }
+        }
+        
+        //TODO check and insert this logic
+        // if (IsSpawnBasedOnPlayers)
+        // {
+        //     for (int i = 0; i < JSpawnPointsArray.Length; i++)
+        //     {
+        //         var spawnPoint = JSpawnPointsArray[i];
+        //         if (spawnPoint.isUsed)
+        //             continue;
+        //         
+        //         if (spawnPoint.IsUsedAsNeighbourToOtherPoint)
+        //             continue;
+        //         
+        //         byte playerNearby = 0;
+        //         for (int j = 0; j < PlayersPosArray.Length; j++)
+        //         {
+        //             var playerPos = PlayersPosArray[j];
+        //             float distSquared = (playerPos - spawnPoint.position).sqrMagnitude;
+        //             if (distSquared > DISTANCE_TO_BLOCK_POINTS_SQUARED)
+        //                 continue;
+        //             playerNearby++;
+        //             spawnPoint.closestPlayerDistance = distSquared;
+        //         }
+        //         if (playerNearby <= 0)
+        //             continue;
+        //         ResultPointsToSpawn.Add(spawnPoint.id);
+        //         for (int j = 0; j < JSpawnPointsArray.Length; j++)
+        //         {
+        //             if (i == j)
+        //                 continue;
+        //             var point = JSpawnPointsArray[j];
+        //             if (point.isUsed)
+        //             {
+        //                 continue;
+        //             }
+        //             float distance = (spawnPoint.position - point.position).sqrMagnitude;
+        //             if (distance > DISTANCE_TO_BLOCK_POINTS_SQUARED)
+        //             {
+        //                 continue;
+        //             }
+        //             point.IsUsedAsNeighbourToOtherPoint = true;
+        //         }
+        //     }
+        // }
+    }
+}
+
+public struct CheckTargetsInRangeJob : IJobParallelFor
+{
+    [ReadOnly] public NativeArray<FixedString32Bytes> Tags;
+    [ReadOnly] public NativeArray<FishnetInvectorHealthController> PossibleTargets;
+    [ReadOnly] public Vector3 Center;
+    [ReadOnly] public float Radius;
+    
+    public NativeArray<bool> Results;
+
+    public void Execute(int index)
+    {
+        var target = PossibleTargets[index];
+        if (target.NetworkObject == null)
+        {
+            return;
+        }
+        
+        for (int i = 0; i < Tags.Length; i++)
+        {
+            if (target.NetworkObject.CompareTag(Tags[i].ToString()))
+            {
+                return;
+            }
+        }
+            
+        if (!CommonMath.Math.IsWithinRange(Center, target.NetworkObject.transform.position, Radius))
+        {
+            return;
+        }
+        
+        Results[index] = true;
+    }
+}
+
+[ExecuteInEditMode]
+public class RespawnManager : RoomManager {
+    protected const float DEFAULT_MONSTER_RESPAWN_TIME = 600f;
+    public static string TAG_PORTAL_SPAWN_POINT = "EscapePortalPoint";
+    public static string TAG_MONSTER_SPAWN_POINT = "MonsterSpawnPoint";
+    public static string TAG_BOSS_SPAWN_POINT = "BossSpawnPoint";
+    protected static float DISTANCE_TO_SPAWN_AI = 20f;
+    protected static float DISTANCE_TO_DESPAWN_AI = 40f;
+    protected static float DISTANCE_TO_BLOCK_POINTS = 15f;
+    [SerializeField] protected List<SpawnPoint> _spawnPoints = new List<SpawnPoint>();
+    protected NativeArray<SpawnPointForJob> SpawnPointsArray;
+    [SerializeField] protected EnemyDefinitionsHolderSO _enemyDefinitionsHolderSO;
+    [SerializeField] protected bool _isSpawnBasedOnPlayers;
+    protected CreaturesFactory _creaturesFactory;
+    protected bool _isActivated = true;
+    protected ushort _startingFromIndex = 0;
+    public Action<List<Vector3>> OnBossSpawnPointsPopulated;
+    [field: SerializeField] public List<Vector3> PortalPoints { get; protected set; } = new (); 
+    protected bool _isDebug = true;
+    protected bool _isSpawnPointsInitialized;
+    [SerializeField] private bool _isSpawnPointsInsideHolder = false;
+    public static RespawnManager Instance { get; protected set; }
+
+    protected void OnDisable() { Debug.Log($"[RespawnManager] OnDisable"); }
+    protected void OnEnable() { Debug.Log($"[RespawnManager] OnEnable"); }
+
+    private void Awake()
+    {
+        if (Instance == null)
+        {
+            Instance = this;
+        }
+        else
+        {
+            Destroy(this);
+        }
+    }
+
+    public override void OnStartNetwork() {
+        base.OnStartNetwork();
+
+        if (IsServer || IsHost) {
+            _creaturesFactory = GetComponent<CreaturesFactory>();
+        }
+    }
+    
+    public override void OnStopNetwork() {
+        base.OnStopNetwork();
+        if (IsServer || IsHost) {
+            if (SpawnPointsArray.IsCreated)
+                SpawnPointsArray.Dispose();
+        }
+    }
+
+    protected IEnumerator CorUpdate()
+    {
+        var time = new WaitForSeconds(1f);
+        while (true)
+        {
+            if (!_isActivated)
+                yield return null;
+            // StartCoroutine(SpawnCreaturesIfRequired());
+            // StartCoroutine(DespawnCreaturesIfRequired());
+            CheckPlayers();
+            yield return time;
+        }
+    }
+
+    private void CheckPlayers()
+    {
+        if (GameplayManager.SpawnedPlayerHeroes.Count == 0)
+            return;
+        
+        if (SpawnPointsArray.Length == 0)
+        {
+            Debug.LogError($"[RespawnManager] SpawnPointsArray.Length == 0");
+            return;
+        }
+        var playerPosArray = new NativeArray<Vector3>(

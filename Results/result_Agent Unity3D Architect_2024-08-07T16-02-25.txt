@@ -1,0 +1,55 @@
+// Assets\-ZombieRoyale\Scripts\Editor\DungeonHolderNetworkedEditor.cs
+using System.Linq;
+using UnityEditor;
+using UnityEngine;
+
+namespace _ZombieRoyale.Scripts.Dungeon.Editor
+{
+    [CustomEditor(typeof(DungeonHolderNetworked))]
+    public class DungeonHolderNetworkedEditor : UnityEditor.Editor
+    {
+        private DungeonHolderNetworked _dungeonHolderNetworked;
+
+        private void OnEnable()
+        {
+            _dungeonHolderNetworked = target as DungeonHolderNetworked;
+        }
+
+        public override void OnInspectorGUI()
+        {
+            base.OnInspectorGUI();
+
+            if (!Application.isPlaying)
+            {
+                return;
+            }
+
+            EditorGUILayout.Space();
+            EditorGUILayout.LabelField("Room Infos:", EditorStyles.boldLabel);
+
+            if (_dungeonHolderNetworked.RoomInfosDict == null || _dungeonHolderNetworked.RoomInfosDict.Count == 0)
+            {
+                EditorGUILayout.LabelField("No room infos available.");
+                return;
+            }
+
+            var keys = _dungeonHolderNetworked.RoomInfosDict.Keys.ToArray();
+            var values = _dungeonHolderNetworked.RoomInfosDict.Values.ToArray();
+            for (var i = 0; i < _dungeonHolderNetworked.RoomInfosDict.Count; i++)
+            {
+                EditorGUILayout.BeginHorizontal();
+                EditorGUILayout.LabelField($"Room ID: {keys[i]}", GUILayout.Width(80));
+                EditorGUILayout.LabelField($"Collapsing Time: {values[i].CollapsingTime:F2}", GUILayout.Width(150));
+
+                var roomInfo = _dungeonHolderNetworked.GetRoomInfo(keys[i]);
+                if (roomInfo != null)
+                {
+                    EditorGUILayout.LabelField($"Timer Active: {roomInfo.collapsingTimer.enabled}", GUILayout.Width(120));
+                    EditorGUILayout.LabelField($"Timer Time: {roomInfo.collapsingTimer.RemainingTime:F2}", GUILayout.Width(120));
+                }
+                
+                EditorGUILayout.EndHorizontal();
+            }
+        }
+    }
+}

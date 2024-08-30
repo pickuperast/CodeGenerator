@@ -1,0 +1,90 @@
+csharp
+using System;
+using System.Collections.Generic;
+using UnityEngine;
+
+namespace Sanat.ApiGemini
+{
+    [Serializable]
+    public class ChatResponse
+    {
+        public List<Candidate> candidates;
+        public UsageMetadata usageMetadata;
+    }
+
+    [Serializable]
+    public class Candidate
+    {
+        public Content content;
+    }
+
+    [Serializable]
+    public class Content
+    {
+        public List<Part> parts;
+    }
+
+    [Serializable]
+    public class Part
+    {
+        public string text;
+    }
+
+    [Serializable]
+    public class UsageMetadata
+    {
+        public int promptTokenCount;
+        public int candidatesTokenCount;
+        public int totalTokenCount;
+    }
+
+    [Serializable]
+    public class Contents
+    {
+        public string role;
+        public Parts parts;
+    }
+
+    [Serializable]
+    public class Parts
+    {
+        public string text;
+    }
+
+    [Serializable]
+    public class SafetySettings
+    {
+        public string category;
+        public string threshold;
+    }
+
+    [Serializable]
+    public class GenerationConfig
+    {
+        public float temperature;
+        public float topP;
+        public int topK;
+    }
+
+    [Serializable]
+    public class FunctionDeclaration
+    {
+        public string name;
+        public string description;
+        public List<Parameter> parameters;
+    }
+
+    [Serializable]
+    public class Parameter
+    {
+        public string name;
+        public string type;
+    }
+
+    [Serializable]
+    public class ChatMessage
+    {
+        public string content;
+        public string role;
+    }
+}

@@ -1,0 +1,60 @@
+// Assets\-ZombieRoyale\Scripts\InRoomSystems\DungeonHolderNetworkedEditor.cs:
+using System.Linq;
+using UnityEditor;
+using UnityEngine;
+
+namespace _ZombieRoyale.Scripts.Dungeon
+{
+    [CustomEditor(typeof(DungeonHolderNetworked))]
+    public class DungeonHolderNetworkedEditor : Editor
+    {
+        private DungeonHolderNetworked _dungeonHolderNetworked;
+    
+        private void OnEnable()
+        {
+            _dungeonHolderNetworked = target as DungeonHolderNetworked;
+        }
+
+        public override void OnInspectorGUI()
+        {
+            base.OnInspectorGUI();
+            if (_dungeonHolderNetworked == null)
+            {
+                return;
+            }
+            GUILayout.Space(20);
+            EditorGUILayout.LabelField($"ServerUptime: {_dungeonHolderNetworked.ServerUptime:2}", EditorStyles.boldLabel);
+            GUILayout.Space(5);
+
+            if (_dungeonHolderNetworked.RoomInfosDict == null || _dungeonHolderNetworked.RoomInfosDict.Count == 0)
+            {
+                EditorGUILayout.LabelField("RoomInfosDict is empty.", EditorStyles.boldLabel);
+                return;
+            }
+
+            string[] headers = { "Room Id", "Collapsing Time", "Room Active", "Helper: Is Room Active In", "Helper: Seconds To Collapse" };
+            var roomInfos = _dungeonHolderNetworked.RoomInfosDict.Values.OrderBy(x => x.RoomId).ToArray();
+            int rowCount = roomInfos.Length;
+
+            EditorGUILayout.BeginHorizontal();
+            for (int i = 0; i < headers.Length; i++)
+            {
+                GUILayout.Label(headers[i], EditorStyles.boldLabel, GUILayout.Width(150));
+            }
+            EditorGUILayout.EndHorizontal();
+
+            for (int i = 0; i < rowCount; i++)
+            {
+                EditorGUILayout.BeginHorizontal();
+                GUILayout.Label(roomInfos[i].RoomId.ToString(), GUILayout.Width(150));
+                GUILayout.Label(roomInfos[i].CollapsingTime.ToString("F2"), GUILayout.Width(150));
+                var roomInfo = _dungeonHolderNetworked.GetRoomInfo(i);
+                string isActive = roomInfo.collapsingTimer.RoomIsActive ? "True" : "False";
+                GUILayout.Label(isActive, GUILayout.Width(150));
+                GUILayout.Label(roomInfo.collapsingTimer.IsRoomActiveIn.ToString(), GUILayout.Width(150));
+                GUILayout.Label(roomInfo.collapsingTimer.SecondsToCollapse.ToString("F2"), GUILayout.Width(150));
+                EditorGUILayout.EndHorizontal();
+            }
+        }
+    }
+}

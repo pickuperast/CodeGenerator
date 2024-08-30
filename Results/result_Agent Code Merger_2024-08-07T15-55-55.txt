@@ -1,0 +1,26 @@
+csharp
+using System.Collections.Generic;
+using UnityEngine;
+
+namespace _ZombieRoyale.Scripts.Dungeon
+{
+    public class DungeonHolderNetworked : MonoBehaviour
+    {
+        [SerializeField] private List<DungeonRoomInfo> _roomInfos;
+        public Dictionary<int, DungeonRoomInfo> RoomInfosDict = new Dictionary<int, DungeonRoomInfo>();
+        public float ServerUptime = 0;
+
+        private void Start()
+        {
+            foreach (var roomInfo in _roomInfos)
+            {
+                RoomInfosDict[roomInfo.RoomId] = roomInfo;
+            }
+        }
+
+        private void Update()
+        {
+            ServerUptime += Time.deltaTime;
+        }
+    }
+}

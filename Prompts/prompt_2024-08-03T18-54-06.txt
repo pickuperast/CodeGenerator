@@ -1,0 +1,611 @@
+# ROLE:
+Unity3D code architect.
+
+# GOAL:
+Write specific and detailed code for Unity3D projects.
+
+# BACKSTORY:
+You are a Unity 3D Code Writer. You write specific and detailed code for Unity 3D projects in C#.
+You provide solutions to coding problems, write scripts for game mechanics, and integrate various assets and systems.
+You have a deep understanding of Unity 3D, C#, and game development principles.
+You follow best practices for performance optimization, code organization, and version control.
+You collaborate closely with the Unity 3D Architect to ensure that the codebase aligns with the overall project architecture.
+Stick and balance between with Clean code principles and SOLID principles and 'Clean' Code, Horrible Performance - by Casey Muratori.
+Make clean and efficient code, remember that focusing exclusively on either aspect can lead to less optimal results.
+Maintaining a good understanding of the trade-offs between readability, maintainability, and performance is crucial.
+Keep in mind that NetworkBehaviour constructors are not allowed.
+Remember that [SyncObject], [SyncVar] are allowed only in NetworkBehaviour classes.
+Always provide FULL CODE of the file just to copy paste code and application should run.
+DO NOT write explanations for the code.
+DO NOT skip showing fully method where code was changed.
+DO NOT provide comments in code.
+include file path as first row for example(without quotes): "// Assets\-ZombieRoyale\Scripts\LLM AI\Personality\Personality.cs"
+# CODE: // Assets\-ZombieRoyale\Scripts\LLM AI\Personality\Personality.cs:
+ using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.IO;
+using UnityEngine;
+using System.Text;
+using Newtonsoft.Json;
+
+public class Personality : MonoBehaviour, IDescribable
+{
+    [Header("Character Attributes")]
+
+    [Tooltip("The PersonalityDefinition to use for this character.")]
+    [SerializeField] private PersonalityDefinition mPersonalityDefinition;
+    private List<string> mTasks = new List<string>();
+    /// <summary>
+    /// Controller asset in scene that generates personality prompts for all LLM personalities. 
+    /// </summary>
+    private PersonalityManager mPersonalityController;
+
+    /// <summary>
+    /// Personality descriptions based on parameters.
+    /// </summary>
+    private string[] mDescriptions;
+
+    /// <summary>
+    /// Single string representing all aspects of personality.
+    /// </summary>
+    private string mPersonalityPrompt;
+
+    /// <summary>
+    /// String builder used to build prompt strings efficiently.
+    /// </summary>
+    private StringBuilder mBuilder;
+  
+    /// <summary>
+    /// Communication interface between the character and GPT.
+    /// </summary>
+    private GptCommunicator mGpt;
+
+    /// <summary>
+    /// Abstract hearing sense to generate prompts from heard "sounds".
+    /// </summary>
+    private Hearing mHearing;
+
+    /// <summary>
+    /// Function delegate to "say" statements to surrounding characters.
+    /// </summary>
+    /// <param name="speaker">
+    /// The Character making the statement.
+    /// </param>
+    /// The statement being made.
+    /// <param name="statment"></param>
+    public delegate void SayToOthers(Personality speaker, string statment);
+
+    /// <summary>
+    /// Event fired to "say" statements to surrounding characters.
+    /// </summary>
+    public event SayToOthers onSayToOthers;
+
+    /// <summary>
+    /// What the character is "looking at" currently.
+    /// </summary>
+    private IDescribable mLookingAt;
+
+    /// <summary>
+    /// Vision abstraction to describe what the character
+    /// can "see" in a written prompt.
+    /// </summary>
+    private Vision mVision;
+
+    /// <summary>
+    /// Text description of Character's role they are playing.
+    /// </summary>
+    private string mRole;
+
+    /// <summary>
+    /// List of GPT Messages sent and received on behalf of this Character.
+    /// </summary>
+    private List<GptCommunicator.Message> mMessages;
+
+    /// <summary>
+    /// Description of Character's surroundings.
+    /// </summary>
+    private string mSurroundings;
+
+    /// <summary>
+    /// How long the character should wait before making another statment,
+    /// based on the previous statement.
+    /// </summary>
+    private float mLastStatementWait;
+
+    /// <summary>
+    /// The last time a statement was made.
+    /// </summary>
+    private float mLastStatementTime;
+
+    /// <summary>
+    /// Short description of personality, for data collection purposes.
+    /// </summary>
+    private string mSummary;
+
+    /** Accessors/Setters **/
+    public string CharacterName 
+    { 
+        get => mPersonalityDefinition.CharacterName; 
+        set => mPersonalityDefinition.CharacterName = value; 
+    }
+    public string BackStory { get => mPersonalityDefinition.BackStory; set => mPersonalityDefinition.BackStory = value; }
+    public float Temperature { get => mPersonalityDefinition.Temperature; }
+    public float PresencePenalty { get => mPersonalityDefinition.PresencePenalty; }
+    public float FrequencyPenalty { get => mPersonalityDefinition.FrequencyPenalty; }
+    public int Openness { get => mPersonalityDefinition.Openness; set => mPersonalityDefinition.Openness = value; }
+    public int Conscientiousness 
+    { 
+        get => mPersonalityDefinition.Conscientiousness;
+        set => mPersonalityDefinition.Conscientiousness = value;
+    }
+    public int Extraversion 
+    { 
+        get => mPersonalityDefinition.Extraversion;
+        set => mPersonalityDefinition.Extraversion = value;
+    }
+    public int Agreeableness 
+    { 
+        get => mPersonalityDefinition.Agreeableness;
+        set => mPersonalityDefinition.Agreeableness = value;
+    }
+    public int Neroticsm { get => mPersonalityDefinition.Neroticsm; set => mPersonalityDefinition.Neroticsm = value; }
+    public int Happiness { get => mPersonalityDefinition.Happiness; set => mPersonalityDefinition.Happiness = value; }
+    public int Anger { get => mPersonalityDefinition.Anger; set => mPersonalityDefinition.Anger = value; }
+    public int Sarcasm { get => mPersonalityDefinition.Sarcasm; set => mPersonalityDefinition.Sarcasm = value; }
+    public string[] Secrets { get => mPersonalityDefinition.Secrets; set => mPersonalityDefinition.Secrets = value; }
+    public string[] ShirtSleeve { get => mPersonalityDefinition.ShirtSleeve; set => mPersonalityDefinition.ShirtSleeve = value; }
+    public IDescribable LookingAt
+    {
+        get => mLookingAt;
+        set => mLookingAt = value;
+    }
+    public string[] Descriptions { get => mDescriptions; }
+    public List<GptCommunicator.Message> Messages { get => mMessages; }
+    public bool Verbose { get => mPersonalityDefinition.Verbose; }
+    public string Summary { get => mSummary; }
+    public string Tasks { get => TasksDescription(); }
+    public List<string> TaskList { set => mTasks = value; }
+    public string Role { get => BuildRole(); }
+    public string Topics { get => TopicsDescription(); }
+    public string[] TopicsList { set => mTopics = value; }
+
+    [Tooltip("Subjects this character wants to ask people and talk about.")]
+    [SerializeField] private string[] mTopics;
+
+    /// <summary>
+    /// This function is called when the object becomes enabled and active.
+    /// </summary>
+    private void OnEnable()
+    {
+        Init();
+    }
+
+    /// <summary>
+    /// Start is called on the frame when a script is enabled just before any
+    /// of the Update methods are called the first time.
+    /// </summary>
+    private void Start()
+    {
+        if (mPersonalityDefinition.mAutoActivate)
+            StartPersonality();
+    }
+
+    /// <summary>
+    /// Update is called every frame, if the MonoBehaviour is enabled.
+    /// </summary>
+    private void Update()
+    {
+        if (mPersonalityDefinition.mMakeManualStatment)
+            MakeManualStatement();
+    }
+
+    /// <summary>
+    /// Starts the Personality.
+    /// </summary>
+    public void StartPersonality()
+    {
+        mVision.SetFov(mVision.FovHorizontal, mVision.FovVertical);
+    }
+
+    /// <summary>
+    /// Initializes (or reinitializes) the Personality.
+    /// </summary>
+    public void Init()
+    {
+        mBuilder = new StringBuilder(mPersonalityDefinition.mMaxTokens * 4);
+        mMessages = new List<GptCommunicator.Message>();
+        mPersonalityController = FindAnyObjectByType<PersonalityManager>();
+        if (mPersonalityController == null)
+        {
+            Debug.LogError($"ERROR: No PersonalityManager found in scene!");
+        }
+        mDescriptions = mPersonalityController.GenerateNewPersonality(this);
+        mBuilder.Clear();
+        foreach (string aspect in mDescriptions)
+        {
+            mBuilder.Append($"{aspect}");
+        }
+        mPersonalityPrompt = mBuilder.ToString();
+        mVision = GetComponentInChildren<Vision>();
+        if (mVision == null)
+        {
+            //Debug.LogError($"ERROR: Character {mCharacterName} has no vision" + $" component!");
+        }
+        mGpt = FindFirstObjectByType<GptCommunicator>();
+        if (mGpt == null)
+        {
+            //Debug.LogError($"ERROR: Gpt communicator not found in scene!");
+        }
+        mRole = BuildRole();
+        SetSystemPrompt(mRole);
+        mHearing = gameObject.GetComponentInChildren<Hearing>();
+        mSummary = mPersonalityController.GenerateSummary(this);
+    }
+
+    /// <summary>
+    /// Builds a role description string from parameter description strings.
+    /// </summary>
+    /// <returns>
+    /// Role description.
+    /// </returns>
+    private string BuildRole()
+    {
+        mRole = $" {Defines.ROLE_HEAD} {CharacterName} with this backstory: {BackStory}" +
+            $"{Defines.ROLE_MID} {mPersonalityPrompt} " +
+            $"{Tasks}{Topics}{Defines.ROLE_TAIL} {Defines.DIALOGUE_RULE}";
+        
+        //Debug.Log($"{mCharacterName} is using the following role:" + $"\n\"{mRole}\"");
+        return mRole;
+    }
+
+    /// <summary>
+    /// Builds a description of topics this personality wants to talk about.
+    /// </summary>
+    /// <returns>
+    /// Description of topics this perosnality wants to talk about.
+    /// </returns>
+    private string TopicsDescription()
+    {
+        // Description of topics.
+        string description = "";
+
+        if (mTopics.Length > 0)
+        {
+            mBuilder.Clear();
+            mBuilder.Append($"{Defines.TOPICS_HEAD} ");
+            if (mTopics.Length > 1)
+            {
+                for (int i = 0; i < mTopics.Length; i++)
+                {
+                    mBuilder.Append(mTopics[i]);
+                    if (i < mTopics.Length - 1)
+                        mBuilder.Append(Defines.LIST_TAIL);
+                    else
+                        mBuilder.Append(Defines.END_TAIL);
+                }
+            }
+            else
+                mBuilder.Append($"{mTopics[0]}{Defines.END_TAIL}");
+            description = mBuilder.ToString();
+        }
+        return description;
+    }
+
+    /// <summary>
+    /// Generates a description of current tasks occupied by this character.
+    /// </summary>
+    /// <returns>
+    /// Task desscription string.
+    /// </returns>
+    private string TasksDescription()
+    {
+        // Description of tasks.
+        string description = "";
+
+        if (mTasks.Count > 0)
+        {
+            mBuilder.Clear();
+            mBuilder.Append($"{Defines.TASKS_HEAD} ");
+            for (int i = 0; i < mTasks.Count; i++)
+            {
+                mBuilder.Append(mTasks[i]);
+                if (i < mTasks.Count - 1)
+                    mBuilder.Append(Defines.LIST_TAIL);
+                else
+                    mBuilder.Append(Defines.END_TAIL);
+            }
+            description = mBuilder.ToString();
+        }
+        return description;
+    }
+
+    /// <summary>
+    /// Checks whether the character can see or hear anything.
+    /// Only handles vision right now. TO DO: Handle hearing.
+    /// </summary>
+    public void AssessSurroundings()
+    {
+        // Text description of Character's environment.
+        string assessment = DescribeVisualSurroundings();
+        if(!assessment.Equals(string.Empty))
+            mGpt.RequestVisualQueuePrompt(assessment, this, SayOutLoud);
+        Debug.Log($"{mPersonalityDefinition.mCharacterName} {Defines.ASSESS_MID}{assessment}");
+    }
+
+    /// <summary>
+    /// Sets the system prompt for the message list.
+    /// </summary>
+    /// <param name="prompt"></param>
+    public void SetSystemPrompt(string prompt)
+    {
+        // New system prompt message.
+        GptCommunicator.Message system = new GptCommunicator.Message
+        {
+            role = "system",
+            content = prompt
+        };
+
+        if (mMessages.Count > 0)
+            mMessages.RemoveAt(0);
+        mMessages.Insert(0, system);
+        Debug.Log($"{mPersonalityDefinition.mCharacterName} is using the following role:" +
+            $"\n\"{mRole}\"");
+    }
+
+    /// <summary>
+    /// Checks verbosity.
+    /// </summary>
+    /// <returns>
+    /// True if Character is verbose, false if set otherwise.
+    /// </returns>
+    public bool IsVerbose()
+    {
+        return mPersonalityDefinition.Verbose;
+    }
+
+    /// <summary>
+    /// Character makes a preset statement for debugging.
+    /// </summary>
+    private void MakeManualStatement()
+    {
+        if (Verbose)
+            Debug.Log($"{mPersonalityDefinition.mCharacterName} is making the manual statement " +
+                $"\"{mPersonalityDefinition.mManualStatement}\".");
+        if (mPersonalityDefinition.mManualStatement != null && mPersonalityDefinition.mManualStatement.Length > 0)
+            onSayToOthers?.Invoke(this, mPersonalityDefinition.mManualStatement);
+        mPersonalityDefinition.mMakeManualStatment = false;
+    }
+
+    /// <summary>
+    /// Makes a statement out loud to surrounding Characters.
+    /// </summary>
+    /// <param name="statement">
+    /// Statement being made.
+    /// </param>
+    private void SayOutLoud(string statement)
+    {
+        // Current game time.
+        float time = Time.realtimeSinceStartup;
+
+        // Difference between current time and the last dialogue request.
+        float delta = time - mLastStatementTime;
+
+        // How long to wait before making another request.
+        float waitSeconds = delta > mLastStatementWait ? 
+            0 : Mathf.Min(mPersonalityDefinition.mMaxReplyWait, mLastStatementWait - delta);
+
+        StartCoroutine(MakeStatement(statement, waitSeconds));
+        mLastStatementTime = time;
+        mLastStatementWait = statement.Length * mPersonalityDefinition.mWaitScalar;
+    }
+
+    /// <summary>
+    /// Makes a reply request from GPT.
+    /// </summary>
+    /// <param name="statement">
+    /// The statement to reply to.
+    /// </param>
+    /// <param name="waitSeconds">
+    /// How long to wait before making the request.
+    /// </param>
+    /// <returns></returns>
+    IEnumerator MakeStatement(string statement, float waitSeconds)
+    {
+        yield return new WaitForSeconds(waitSeconds);
+        onSayToOthers?.Invoke(this, statement);
+        Debug.Log($"{mPersonalityDefinition.mCharacterName} said \"{statement}\".");
+    }
+
+    /// <summary>
+    /// Executes function calls based on text description of intended actions.
+    /// </summary>
+    /// <param name="instructions">
+    /// Text description from which to generate fuction calls.
+    /// </param>
+    private void FollowInstructions(string instructions)
+    {
+        // To do.
+    }
+
+    /// <summary>
+    /// Receives a statement made by another character,
+    /// illicits a response if appropriate.
+    /// </summary>
+    /// <param name="speaker">
+    /// Character making the statement.
+    /// </param>
+    /// <param name="statement">
+    /// Statement being made by the spearker.
+    /// </param>
+    public void HearFromOther(IDescribable speaker, string statement)
+    {
+        string prompt = $"{speaker.DescribeSelfForOther(this)} " +
+            $"{Defines.HEAR_OTHER_MID} \"{statement}\"{Defines.END_TAIL}";
+        if (Verbose)
+            Debug.Log($"{mPersonalityDefinition.mCharacterName} heard \"{statement}\".");
+        mGpt.RequestConversationalReply(prompt, this, SayOutLoud);
+    }
+    
+    public string GeneratePromptHearFromPlayer(string statement, int questionAnswerAmount)
+    {
+        string prompt = $"The Player adventurer " + $"{Defines.HEAR_OTHER_MID} \"{statement}\"{Defines.END_TAIL}";
+        if (Verbose) Debug.Log($"{mPersonalityDefinition.mCharacterName} heard \"{statement}\".");
+        string dialogueHistory = GetDialogueHistory(questionAnswerAmount);
+        string replyPrompt = $"{prompt} {Defines.REPLY_INSTRUCT}" + $"{Defines.RESPONSE_CHECK}{Defines.RESPONSE_DENY}";
+        return replyPrompt;
+    }
+
+    /// <summary>
+    /// Recieves a text descritption of a noise made in the vicinity of a
+    /// Character, illicits a response if approrpriate.
+    /// </summary>
+    /// <param name="noiseMaker">
+    /// Thing that made the noise.
+    /// </param>
+    /// <param name="noise">
+    /// Text description of the noise.
+    /// </param>
+    public void HearFromNonAnimate(IDescribable noiseMaker, string noise)
+    {
+        mBuilder.Clear();
+        mBuilder.Append($"{Defines.HEAR_NONANIM_HEAD} {noise} " +
+            $"{Defines.HEAR_NONANIM_MID} {noiseMaker.DescribeSelfForOther(this)}" +
+            $"{Defines.END_TAIL}");
+        mBuilder.Append(DescribeVisualSurroundings());
+        mGpt.RequestReactionInstructions(mBuilder.ToString(), this, FollowInstructions);
+    }
+
+
+    public string DescribeVisualSurroundings()
+    {
+        // Things seen by Character.
+        IDescribable[] seen = mVision.Seen;
+
+        // Iterator variable.
+        int i;
+
+        // Description of visual surroundings.
+        string description = string.Empty;
+
+        if (seen.Length > 0)
+        {
+            mBuilder.Clear();
+            mBuilder.Append($"{Defines.SEE_HEAD} ");
+            for (i = 0; i < seen.Length; i++)
+            {
+                if (i < seen.Length - 1)
+                    mBuilder.Append($"{seen[i].DescribeSelfForOther(this)}" +
+                        $"{Defines.LIST_TAIL}");
+                else
+                    if(seen.Length > 1)
+                        mBuilder.Append($"{Defines.LIST_HEAD} " +
+                            $"{seen[i].DescribeSelfForOther(this)}{Defines.END_TAIL}");
+                    else
+                        mBuilder.Append($"{seen[i].DescribeSelfForOther(this)}" +
+                            $"{Defines.END_TAIL}");
+            }
+            description = mBuilder.ToString();
+        }
+        mSurroundings = description;
+        return description;
+    }
+
+    /// <summary>
+    /// Generates a text description of this character for another character.
+    /// </summary>
+    /// <param name="caller">
+    /// Character the text description is being generated for.
+    /// </param>
+    /// <returns>
+    /// Character the text description os being generated of.
+    /// </returns>
+    public string DescribeSelfForOther(Personality caller)
+    {
+        mBuilder.Clear();
+        mBuilder.Append($"{BackStory} {Defines.DESC_NAME} {CharacterName}");
+        if (LookingAt != null)
+            if ((object)LookingAt != caller)
+                mBuilder.Append($" {Defines.LOOK_OTHER} {LookingAt}");
+            else
+                mBuilder.Append($" {Defines.LOOK_YOU}");
+        else
+            mBuilder.Append($" {Defines.LOOK_NOTH}");
+        return mBuilder.ToString();
+    }
+
+    public string GetName()
+    {
+        return CharacterName;
+    }
+
+    public string ClearAnswer(string s)
+    {
+        if (s.Substring(0, 1) == "\"")
+        {
+            s = s.Substring(1, s.Length - 2);
+        }
+        return s;
+    }
+
+    [Serializable]
+    public class DialogueHistoryEntry
+    {
+        public string Timestamp;
+        public string Question;
+        public string Answer;
+    }
+    
+    public void SaveDialogueHistory(string question, string answer)
+    {
+        DialogueHistoryEntry entry = new DialogueHistoryEntry
+        {
+            Timestamp = DateTime.Now.ToString(),
+            Question = question,
+            Answer = answer
+        };
+
+        // Get the file path for the NPC's dialogue history
+        string filePath = Path.Combine(Application.streamingAssetsPath, "DialogueHistories", $"npc-{mPersonalityDefinition.id}.json");
+
+        // Check if the file exists
+        if (File.Exists(filePath))
+        {
+            // Load the existing dialogue history
+            string json = File.ReadAllText(filePath);
+            List<DialogueHistoryEntry> history = JsonConvert.DeserializeObject<List<DialogueHistoryEntry>>(json);
+
+            // Add the new entry to the history
+            history.Add(entry);
+
+            // Serialize the updated history to JSON
+            string updatedJson = JsonConvert.SerializeObject(history);
+
+            // Overwrite the existing file with the updated JSON
+            File.WriteAllText(filePath, updatedJson);
+        }
+        else
+        {
+            // Create a new list with the new entry
+            List<DialogueHistoryEntry> history = new List<DialogueHistoryEntry> { entry };
+
+            // Serialize the history to JSON
+            string json = JsonConvert.SerializeObject(history);
+
+            // Create the directory if it doesn't exist
+            Directory.CreateDirectory(Path.GetDirectoryName(filePath));
+
+            // Write the JSON to the file
+            File.WriteAllText(filePath, json);
+        }
+    }
+
+    public string GetDialogueHistory(int qaAmount)
+    {
+        throw new NotImplementedException();
+    }
+} 
+
+
+
+# TASK: complete GetDialogueHistory method

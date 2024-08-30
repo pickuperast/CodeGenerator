@@ -1,0 +1,3071 @@
+# ROLE:
+Unity3D code architect.
+
+# GOAL:
+Write specific and detailed code for Unity3D projects.
+
+# BACKSTORY:
+You are a Unity 3D Code Writer. You write specific and detailed code for Unity 3D projects in C#.
+You provide solutions to coding problems, write scripts for game mechanics, and integrate various assets and systems.
+You have a deep understanding of Unity 3D, C#, and game development principles.
+You follow best practices for performance optimization, code organization, and version control.
+You collaborate closely with the Unity 3D Architect to ensure that the codebase aligns with the overall project architecture.
+Stick and balance between with Clean code principles and SOLID principles and 'Clean' Code, Horrible Performance - by Casey Muratori.
+Make clean and efficient code, remember that focusing exclusively on either aspect can lead to less optimal results.
+Maintaining a good understanding of the trade-offs between readability, maintainability, and performance is crucial.
+Keep in mind that NetworkBehaviour constructors are not allowed.
+Remember that [SyncObject], [SyncVar] are allowed only in NetworkBehaviour classes.
+Always provide FULL CODE of the file just to copy paste code and application should run.
+DO NOT write explanations for the code.
+DO NOT skip showing fully method where code was changed.
+DO NOT provide comments in code.
+# CODE: // Assets\-ZombieRoyale\Scripts\ColliderProjectile.cs:
+ using System;
+using FishNet;
+using FishNet.Object;
+using FishNet.Object.Synchronizing;
+using FishnetInvector;
+using UnityEngine;
+
+public class ColliderProjectile : NetworkBehaviour
+{
+    [SerializeField] private ColliderInvoker colliderInvoker;
+    [SyncVar(OnChange = nameof(OnProjectileActivated))] private ProjectileData projectileData;
+    [SerializeField] private bool isCollidingEnabledOnClients;
+    [SerializeField] private GameObject visual;
+    private double _elapsedTime = 0f;
+    private Vector3 _startPosition;
+    private bool _isShowVisual;
+    
+    #region Bake Components
+
+    private void AssignComponentsIfRequired()
+    {
+        colliderInvoker ??= GetComponent<ColliderInvoker>();
+    }
+
+    private void OnValidate()
+    {
+        AssignComponentsIfRequired();
+        visual.SetActive(false);
+    }
+
+    private void Awake()
+    {
+        AssignComponentsIfRequired();
+    }
+
+    private void Start()
+    {
+        _startPosition = transform.position;
+    }
+
+    #endregion
+
+    public void Init()
+    {
+        colliderInvoker.enabled = true;
+        SubscribeServerColliding();
+    }
+    
+    private void OnProjectileActivated(ProjectileData oldData, ProjectileData newData, bool asServer) 
+    {
+        if (asServer)
+        {
+            colliderInvoker.enabled = true;
+            SubscribeServerColliding();
+        }
+        else
+        {
+            colliderInvoker.enabled = isCollidingEnabledOnClients;
+            transform.rotation = newData.rotation;
+        }
+    }
+
+    #region OnTick
+
+    public override void OnStartServer()
+    {
+        base.OnStartServer();
+        if (IsHost)
+            RenderVisualEffect();
+        InstanceFinder.TimeManager.OnTick += OnServerTick;
+    }
+
+    public override void OnStartClient()
+    {
+        base.OnStartClient();
+        RenderVisualEffect();
+        InstanceFinder.TimeManager.OnTick += OnClientTick;
+    }
+
+    private void OnServerTick()
+    {
+        if (_elapsedTime >= projectileData.duration)
+        {
+            Despawn(NetworkObject);
+        }
+        _elapsedTime += InstanceFinder.NetworkManager.TimeManager.TickDelta;
+        float t = (float)(_elapsedTime / projectileData.duration);
+        transform.position = Vector3.Lerp(_startPosition, projectileData.endPosition, t);
+    }
+
+    private void OnClientTick()
+    {
+        throw new NotImplementedException();
+    }
+
+    #endregion
+    
+    private void RenderVisualEffect()
+    {
+        if (!_isShowVisual)
+            return;
+        
+        visual.SetActive(true);
+    }
+
+    public void SubscribeServerColliding()
+    {
+        colliderInvoker.OnNetworkedTriggerEnter += OnNetworkedTriggerEnter;
+        colliderInvoker.OnNetworkedTriggerExit += OnNetworkedTriggerExit;
+        colliderInvoker.OnNetworkedTriggerStay += OnNetworkedTriggerStay;
+    }
+
+    private void OnNetworkedTriggerStay(FishnetInvectorHealthController obj)
+    {
+        
+    }
+
+    private void OnNetworkedTriggerExit(FishnetInvectorHealthController obj)
+    {
+        
+    }
+
+    private void OnNetworkedTriggerEnter(FishnetInvectorHealthController arg1, Vector3 arg2)
+    {
+        
+    }
+    
+    public class ProjectileData/* 48 bytes */
+    {
+        public Vector3 forwardDirection;/* 3×4=12 bytes */
+        public Vector3 endPosition;/* 3×4=12 bytes */
+        public Quaternion rotation;/* 4×4=16 bytes */
+        public float duration;/*  4 bytes */
+        public int rank;/*  4 bytes */
+
+        public ProjectileData(){}
+        
+        public ProjectileData(Vector3 forwardDirection, Vector3 endPosition, Quaternion rotation, float duration, int rank)
+        {
+            this.forwardDirection = forwardDirection;
+            this.endPosition = endPosition;
+            this.rotation = rotation;
+            this.duration = duration;
+            this.rank = rank;
+        }
+    }
+}
+ 
+
+// Assets\FishNet\Runtime\Object\NetworkBehaviour.cs:
+ using FishNet.Documenting;
+using FishNet.Managing.Transporting;
+using FishNet.Serializing.Helping;
+using FishNet.Utility.Constant;
+using System.Runtime.CompilerServices;
+using UnityEngine;
+
+[assembly: InternalsVisibleTo(UtilityConstants.CODEGEN_ASSEMBLY_NAME)]
+namespace FishNet.Object
+{
+    /// <summary>
+    /// Scripts which inherit from NetworkBehaviour can be used to gain insight of, and perform actions on the network.
+    /// </summary>
+    public abstract partial class NetworkBehaviour : MonoBehaviour
+    {
+        #region Public.
+        /// <summary>
+        /// True if this NetworkBehaviour is initialized for the network.
+        /// </summary>
+        public bool IsSpawned => _networkObjectCache.IsSpawned;
+        /// <summary>
+        /// 
+        /// </summary>
+        [SerializeField, HideInInspector]
+        private byte _componentIndexCache = byte.MaxValue;
+        /// <summary>
+        /// ComponentIndex for this NetworkBehaviour.
+        /// </summary>
+        public byte ComponentIndex
+        {
+            get => _componentIndexCache;
+            private set => _componentIndexCache = value;
+        }
+#if UNITY_EDITOR
+        /// <summary>
+        /// NetworkObject automatically added or discovered during edit time.
+        /// </summary>
+        [SerializeField, HideInInspector]
+        private NetworkObject _addedNetworkObject;
+#endif 
+        /// <summary>
+        /// Cache of the TransportManager.
+        /// </summary>
+        private TransportManager _transportManagerCache;
+        /// <summary>
+        /// 
+        /// </summary>
+        [SerializeField, HideInInspector]
+        private NetworkObject _networkObjectCache;
+        /// <summary>
+        /// NetworkObject this behaviour is for.
+        /// </summary>
+        public NetworkObject NetworkObject => _networkObjectCache;
+        #endregion
+
+        #region Private.
+        /// <summary>
+        /// True if initialized at some point asServer.
+        /// </summary>
+        private bool _initializedOnceServer;
+#pragma warning disable CS0414
+        /// <summary>
+        /// True if initialized at some point not asServer.
+        /// </summary>
+        private bool _initializedOnceClient;
+#pragma warning restore CS0414
+        #endregion
+
+        /// <summary>
+        /// Outputs data about this NetworkBehaviour to string.
+        /// </summary>
+        /// <returns></returns>
+        public override string ToString()
+        {
+            return $"Name [{gameObject.name}] ComponentId [{ComponentIndex}] NetworkObject Name [{_networkObjectCache.name}] NetworkObject Id [{_networkObjectCache.ObjectId}]";
+        }
+
+
+        /// <summary>
+        /// Preinitializes this script for the network.
+        /// </summary>
+        internal void Preinitialize_Internal(NetworkObject nob, bool asServer)
+        {
+            _transportManagerCache = nob.TransportManager;
+
+            InitializeOnceSyncTypes(asServer);
+            if (asServer)
+            {                
+                InitializeRpcLinks();
+                _initializedOnceServer = true;
+            }
+            else
+            {
+                _initializedOnceClient = true;
+            }
+        }
+
+        internal void Deinitialize(bool asServer)
+        {
+
+        }
+
+        /// <summary>
+        /// Serializes information for network components.
+        /// </summary>
+        internal void SerializeComponents(NetworkObject nob, byte componentIndex)
+        {
+            _networkObjectCache = nob;
+            ComponentIndex = componentIndex;
+        }
+
+        /// <summary>
+        /// Manually initializes network content for the NetworkBehaviour if the object it's on is disabled.
+        /// </summary>
+        internal void InitializeIfDisabled()
+        {
+            if (gameObject.activeInHierarchy)
+                return;
+
+            NetworkInitializeIfDisabled();
+        }
+        /// <summary>
+        /// Long name is to prevent users from potentially creating their own method named the same.
+        /// </summary>
+        [CodegenMakePublic]
+        [APIExclude]
+        internal virtual void NetworkInitializeIfDisabled() { }
+
+        #region Editor.
+        protected virtual void Reset()
+        {
+#if UNITY_EDITOR
+            if (Application.isPlaying)
+                return;
+
+            TryAddNetworkObject();
+#endif
+        }
+
+        protected virtual void OnValidate()
+        {
+#if UNITY_EDITOR
+            if (Application.isPlaying)
+                return;
+
+            TryAddNetworkObject();
+#endif
+        }
+
+        /// <summary>
+        /// Resets this NetworkBehaviour so that it may be added to an object pool.
+        /// </summary>
+        internal void ResetState()
+        {
+            SyncTypes_ResetState();
+            ClearReplicateCache();
+            ClearBuffedRpcs();
+        }
+
+
+        /// <summary>
+        /// Tries to add the NetworkObject component.
+        /// </summary>
+        private NetworkObject TryAddNetworkObject()
+        {
+#if UNITY_EDITOR
+            if (Application.isPlaying)
+                return _addedNetworkObject;
+
+            if (_addedNetworkObject != null)
+            {
+                AlertToDuplicateNetworkObjects(_addedNetworkObject.transform);
+                return _addedNetworkObject;
+            }
+
+            /* Manually iterate up the chain because GetComponentInParent doesn't
+             * work when modifying prefabs in the inspector. Unity, you're starting
+             * to suck a lot right now. */
+            NetworkObject result = null;
+            Transform climb = transform;
+
+            while (climb != null)
+            {
+                if (climb.TryGetComponent<NetworkObject>(out result))
+                    break;
+                else
+                    climb = climb.parent;
+            }
+
+            if (result != null)
+            {
+                _addedNetworkObject = result;
+            }
+            //Not found, add a new nob.
+            else
+            {
+                _addedNetworkObject = transform.root.gameObject.AddComponent<NetworkObject>();
+                Debug.Log($"Script {GetType().Name} on object {gameObject.name} added a NetworkObject component to {transform.root.name}.");
+            }
+
+            AlertToDuplicateNetworkObjects(_addedNetworkObject.transform);
+            return _addedNetworkObject;
+
+            //Removes duplicate network objects from t.
+            void AlertToDuplicateNetworkObjects(Transform t)
+            {
+                NetworkObject[] nobs = t.GetComponents<NetworkObject>();
+                //This shouldn't be possible but does occur sometimes; maybe a unity bug?
+                if (nobs.Length > 1)
+                {
+                    //Update added to first entryt.
+                    _addedNetworkObject = nobs[0];
+
+                    string useMenu = " You may also use the Fish-Networking menu to automatically remove duplicate NetworkObjects.";
+                    string sceneName = t.gameObject.scene.name;
+                    if (string.IsNullOrEmpty(sceneName))
+                        Debug.LogError($"Prefab {t.name} has multiple NetworkObject components. Please remove the extra component(s) to prevent errors.{useMenu}");
+                    else
+                        Debug.LogError($"Object {t.name} in scene {sceneName} has multiple NetworkObject components. Please remove the extra component(s) to prevent errors.{useMenu}");
+                }
+
+            }
+#else
+            return null;
+#endif
+        }
+
+        #endregion
+    }
+
+
+} 
+
+// Assets\-ZombieRoyale\Scripts\Core\ColliderInvoker.cs:
+ using System;
+using _ZombieRoyale.Scripts.Core;
+using FishnetInvector;
+using UnityEngine;
+
+public class ColliderInvoker : MonoBehaviour
+{
+    public Collider Collider => _collider;
+    public BoxCollider BoxCollider => boxCollider;
+    public SphereCollider SphereCollider => _collider as SphereCollider;
+    public CapsuleCollider CapsuleCollider => _collider as CapsuleCollider;
+    public MeshCollider MeshCollider => _collider as MeshCollider;
+    private Collider _collider;
+    [SerializeField] private BoxCollider boxCollider;
+    public Action<FishnetInvectorHealthController, Vector3> OnNetworkedTriggerEnter;
+    public Action<FishnetInvectorHealthController> OnNetworkedTriggerExit;
+    public Action<FishnetInvectorHealthController> OnNetworkedTriggerStay;
+
+    private void OnValidate()
+    {
+        AssignComponentsIfRequired();
+    }
+
+    private void Awake()
+    {
+        AssignComponentsIfRequired();
+    }
+
+    private void AssignComponentsIfRequired()
+    {
+        boxCollider ??= GetComponent<BoxCollider>();
+    }
+
+    private void OnTriggerEnter(Collider other)
+    {
+        var otherHC = GameplayManager.Instance.GetHealthController(other);
+        if (otherHC != null)
+        {
+            Vector3 hitCollisionPos = other.ClosestPointOnBounds(transform.position);
+            OnNetworkedTriggerEnter?.Invoke(otherHC, hitCollisionPos);
+        }
+    }
+
+    private void OnTriggerExit(Collider other)
+    {
+        var otherHC = GameplayManager.Instance.GetHealthController(other);
+        if (otherHC != null)
+        {
+            OnNetworkedTriggerExit?.Invoke(otherHC);
+        }
+        
+    }
+
+    private void OnTriggerStay(Collider other)
+    {
+        var otherHC = GameplayManager.Instance.GetHealthController(other);
+        if (otherHC != null)
+        {
+            OnNetworkedTriggerStay?.Invoke(otherHC);
+        }
+    }
+}
+ 
+
+// Assets\-ZombieRoyale\Scripts\Abilities\AbilityDefinition.cs:
+ using System;
+using System.Collections.Generic;
+using System.Text;
+using UnityEngine;
+
+[CreateAssetMenu(fileName = "New Ability", menuName = "ScriptableObjects/Ability")]
+public class AbilityDefinition : ScriptableObject
+{
+    public byte Id => _id;
+    
+    [Header("-----BASE DATA-----")] 
+    [SerializeField] private byte _id;
+    [SerializeField] private string _name;
+    [SerializeField] [TextArea(3, 10)] private string _description;
+    [field:SerializeField, TextArea(2,10)] public string mainDescription { get; private set; }
+    [field:SerializeField, TextArea(2,10)] public string questDescription { get; private set; }
+    [field:SerializeField, TextArea(2,10)] public string persistDescription { get; private set; }
+    [SerializeField] private Sprite _icon;
+    [field:SerializeField] public int CastID { get; private set; }
+    [SerializeField] private RPGAbilityRankData[] _ranksDatas;
+    [SerializeField] private Ability ability;
+    [field: SerializeField] public bool IsPassive { get; private set; }
+    [field: SerializeField] public bool OverrideCooldown { get; private set; }
+    [field: SerializeField] public bool IsHide { get; private set; }
+    public bool canBeUsedIfDead = false;
+
+    public Ability AbilityInstance => ability;
+    public RPGAbilityRankData[] RanksDatas => _ranksDatas;
+    #region Accessors
+    public string Name => _name;
+    public string Description => _description;
+    public Sprite Icon => _icon;
+    #endregion
+    
+    public enum CastType
+    {
+        Stationary,
+        Mobile
+    }
+
+    public enum AbilityType
+    {
+        Normal,
+        PlayerAutoAttack,
+        PlayerActionAbility
+    }
+    public enum TARGET_TYPES
+    {
+        SELF,
+        CONE,
+        AOE,
+        LINEAR,
+        PROJECTILE,
+        SQUARE,
+        GROUND,
+        GROUND_LEAP,
+        TARGET_PROJECTILE,
+        TARGET_INSTANT
+    }
+    public enum ABILITY_TAGS
+    {
+        onHit,
+        onKill,
+        shapeshifting,
+        stealth
+    }
+
+
+    public enum AbilityActivationType
+    {
+        Instant,
+        Casted,
+        Channeled,
+        Charged,
+        PreCastedCircle,
+        PreCastedCone,
+        PreCastedAim
+    }
+    
+    public enum COST_TYPES
+    {
+        FLAT,
+        PERCENT_OF_MAX,
+        PERCENT_OF_CURRENT
+    }
+    
+    [Serializable]
+    public class RPGAbilityRankData
+    {
+        public CastType castType;
+        public AbilityActivationType activationType;
+        public float manaCost;
+        public float castTime;
+        public bool castInRun;
+        public bool canBeUsedStunned;
+        public bool cancelStealth = true;
+
+        public TARGET_TYPES targetType;
+        public float minRange;
+        public float maxRange;
+        
+        public float projectileSpeed;
+        public float projectileDistance;
+        public float projectileAngleSpread;
+        public int projectileCount = 1;
+        public float firstProjectileDelay;
+        public float projectileDelay;
+        public float projectileDuration = 5;
+        public float projectileComeBackTime;
+        public float projectileComeBackSpeed;
+        public bool isProjectileComeBack;
+        public float projectileNearbyUnitDistanceMax;
+        public float projectileNearbyUnitMaxHit;
+        public bool isProjectileNearbyUnit;
+        public bool projectileDestroyedByEnvironment = true;
+        public LayerMask projectileDestroyLayers;
+        public bool projectileAffectedByGravity;
+        public bool projectileShootOnClickPosition;
+        
+        public bool CanHitPlayer, CanHitAlly, CanHitNeutral = true, CanHitEnemy = true, CanHitSelf, CanHitPet, CanHitOwner;
+
+        public bool UsedOnALly;
+        public ColliderProjectile projectileEffect;
+        public GameObject groundVisualEffect;
+        public GameObject hitEffect;
+
+        public float channelTime;
+
+        public bool isAttackSpeedCooldown;
+        public bool isAttackSpeedGCD;
+        public float cooldown;
+        public bool isGCD;
+        public bool startCDOnActivate = true;
+        public bool CanUseDuringGCD;
+        public bool isSharingCooldown;
+        [HideInInspector] public string cooldownTag;
+
+        public List<BuffDefinition> targetEffectsApplied = new List<BuffDefinition>();
+        public List<float> targetEffectsAppliedDuration;
+        public List<BuffDefinition> casterEffectsApplied = new List<BuffDefinition>();
+        public List<float> casterEffectsAppliedDuration;
+        
+        public List<AttachmentPoints.Point> FXattachmentPoints = new List<AttachmentPoints.Point>();
+
+    }
+
+    public void SetId(byte id)
+    {
+        _id = id;
+    }
+
+    public string GetJsonRepresentation()
+    {
+        StringBuilder jsonBuilder = new StringBuilder();
+        jsonBuilder.Append("{\n");
+        if (IsPassive)
+            jsonBuilder.AppendFormat("  \"Name\": \"{0}\"(Passive),\n", _name);
+        else
+            jsonBuilder.AppendFormat("  \"Name\": \"{0}\",\n", _name);
+        jsonBuilder.AppendFormat("  \"Description\": \"{0}\",\n", mainDescription.ToString());
+        jsonBuilder.AppendFormat("  \"QuestDescription\": \"{0}\",\n", questDescription.ToString());
+        // Add other necessary fields in the same pattern
+        jsonBuilder.Append("}");
+        return jsonBuilder.ToString();
+    }
+} 
+
+// Assets\-ZombieRoyale\Scripts\Abilities\AbilityDefinition.cs:
+ using System;
+using System.Collections.Generic;
+using System.Text;
+using UnityEngine;
+
+[CreateAssetMenu(fileName = "New Ability", menuName = "ScriptableObjects/Ability")]
+public class AbilityDefinition : ScriptableObject
+{
+    public byte Id => _id;
+    
+    [Header("-----BASE DATA-----")] 
+    [SerializeField] private byte _id;
+    [SerializeField] private string _name;
+    [SerializeField] [TextArea(3, 10)] private string _description;
+    [field:SerializeField, TextArea(2,10)] public string mainDescription { get; private set; }
+    [field:SerializeField, TextArea(2,10)] public string questDescription { get; private set; }
+    [field:SerializeField, TextArea(2,10)] public string persistDescription { get; private set; }
+    [SerializeField] private Sprite _icon;
+    [field:SerializeField] public int CastID { get; private set; }
+    [SerializeField] private RPGAbilityRankData[] _ranksDatas;
+    [SerializeField] private Ability ability;
+    [field: SerializeField] public bool IsPassive { get; private set; }
+    [field: SerializeField] public bool OverrideCooldown { get; private set; }
+    [field: SerializeField] public bool IsHide { get; private set; }
+    public bool canBeUsedIfDead = false;
+
+    public Ability AbilityInstance => ability;
+    public RPGAbilityRankData[] RanksDatas => _ranksDatas;
+    #region Accessors
+    public string Name => _name;
+    public string Description => _description;
+    public Sprite Icon => _icon;
+    #endregion
+    
+    public enum CastType
+    {
+        Stationary,
+        Mobile
+    }
+
+    public enum AbilityType
+    {
+        Normal,
+        PlayerAutoAttack,
+        PlayerActionAbility
+    }
+    public enum TARGET_TYPES
+    {
+        SELF,
+        CONE,
+        AOE,
+        LINEAR,
+        PROJECTILE,
+        SQUARE,
+        GROUND,
+        GROUND_LEAP,
+        TARGET_PROJECTILE,
+        TARGET_INSTANT
+    }
+    public enum ABILITY_TAGS
+    {
+        onHit,
+        onKill,
+        shapeshifting,
+        stealth
+    }
+
+
+    public enum AbilityActivationType
+    {
+        Instant,
+        Casted,
+        Channeled,
+        Charged,
+        PreCastedCircle,
+        PreCastedCone,
+        PreCastedAim
+    }
+    
+    public enum COST_TYPES
+    {
+        FLAT,
+        PERCENT_OF_MAX,
+        PERCENT_OF_CURRENT
+    }
+    
+    [Serializable]
+    public class RPGAbilityRankData
+    {
+        public CastType castType;
+        public AbilityActivationType activationType;
+        public float manaCost;
+        public float castTime;
+        public bool castInRun;
+        public bool canBeUsedStunned;
+        public bool cancelStealth = true;
+
+        public TARGET_TYPES targetType;
+        public float minRange;
+        public float maxRange;
+        
+        public float projectileSpeed;
+        public float projectileDistance;
+        public float projectileAngleSpread;
+        public int projectileCount = 1;
+        public float firstProjectileDelay;
+        public float projectileDelay;
+        public float projectileDuration = 5;
+        public float projectileComeBackTime;
+        public float projectileComeBackSpeed;
+        public bool isProjectileComeBack;
+        public float projectileNearbyUnitDistanceMax;
+        public float projectileNearbyUnitMaxHit;
+        public bool isProjectileNearbyUnit;
+        public bool projectileDestroyedByEnvironment = true;
+        public LayerMask projectileDestroyLayers;
+        public bool projectileAffectedByGravity;
+        public bool projectileShootOnClickPosition;
+        
+        public bool CanHitPlayer, CanHitAlly, CanHitNeutral = true, CanHitEnemy = true, CanHitSelf, CanHitPet, CanHitOwner;
+
+        public bool UsedOnALly;
+        public ColliderProjectile projectileEffect;
+        public GameObject groundVisualEffect;
+        public GameObject hitEffect;
+
+        public float channelTime;
+
+        public bool isAttackSpeedCooldown;
+        public bool isAttackSpeedGCD;
+        public float cooldown;
+        public bool isGCD;
+        public bool startCDOnActivate = true;
+        public bool CanUseDuringGCD;
+        public bool isSharingCooldown;
+        [HideInInspector] public string cooldownTag;
+
+        public List<BuffDefinition> targetEffectsApplied = new List<BuffDefinition>();
+        public List<float> targetEffectsAppliedDuration;
+        public List<BuffDefinition> casterEffectsApplied = new List<BuffDefinition>();
+        public List<float> casterEffectsAppliedDuration;
+        
+        public List<AttachmentPoints.Point> FXattachmentPoints = new List<AttachmentPoints.Point>();
+
+    }
+
+    public void SetId(byte id)
+    {
+        _id = id;
+    }
+
+    public string GetJsonRepresentation()
+    {
+        StringBuilder jsonBuilder = new StringBuilder();
+        jsonBuilder.Append("{\n");
+        if (IsPassive)
+            jsonBuilder.AppendFormat("  \"Name\": \"{0}\"(Passive),\n", _name);
+        else
+            jsonBuilder.AppendFormat("  \"Name\": \"{0}\",\n", _name);
+        jsonBuilder.AppendFormat("  \"Description\": \"{0}\",\n", mainDescription.ToString());
+        jsonBuilder.AppendFormat("  \"QuestDescription\": \"{0}\",\n", questDescription.ToString());
+        // Add other necessary fields in the same pattern
+        jsonBuilder.Append("}");
+        return jsonBuilder.ToString();
+    }
+} 
+
+// Assets\FishNet Invector\Scripts\Networked\FishnetInvectorHealthController.cs:
+ using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.Linq;
+using _ZombieRoyale.Scripts.Core;
+using DamageNumbersPro;
+using DungeonScrollerCore;
+using FishNet;
+using FishNet.Connection;
+using FishNet.Object;
+using FishNet.Object.Synchronizing;
+using Invector;
+using UnityEngine;
+using UnityEngine.Events;
+
+namespace FishnetInvector {
+    [RequireComponent(typeof(FishnetInvectorBuffController))]
+    public class FishnetInvectorHealthController : NetworkBehaviour
+    {
+        private static float DEFAULT_HEALTH_RECOVERY_DELAY = 1f;
+        private static float MINIMAL_DAMAGE_TO_SHOW_DAMAGE_VFX = float.Epsilon;
+        public static float TEAM_ADDITIONAL_XP_MODIFIER = 1.1f;
+
+        #region Public Properties
+
+        public FNvHealthController FNvHealthController { get; private set; }
+        public float CurrentHealth => _currentHealth;
+        public float MaxHealth => _maxHealth;
+        public Action OnRessurect;
+        public Action<vDamage> OnDead;
+        public Action<vDamage> OnTakeDamage;
+        public Action<FishnetInvectorHealthController, HealthType, float> OnHealthChanged;
+        public Action<HealthType, float> OnMineHealthChanged;
+        public Collider[] DamageReceivers => _damageReceivers;
+        public FNvDamage LastDamageTaken => _lastDamageTaken;
+        
+        public bool IsAI => _isAI;
+        public bool IsPlayer => _isPlayer;
+        private string _className;
+        public string ClassName => _className ??= StringToHexColor.GetColoredClassName(GetType());
+
+
+        public enum HealthType
+        {
+            Current,
+            Max,
+            Regen
+        }
+
+
+        /// <summary>
+        /// Subscribe to this event to update health bar on clients
+        /// </summary>
+        public Action<float> OnChangeCurrentHealthInfo;
+
+        #endregion
+
+        #region Private Properties
+
+        [SyncVar(OnChange = nameof(OnCurrentHealthChange))]
+        private float _currentHealth;
+
+        [SyncVar(OnChange = nameof(OnMaxHealthChange))]
+        private float _maxHealth;
+
+        [SyncVar] private float _healthRecoveryDelay;
+        [SyncVar] private float _healthRecoveryRate;
+        [SyncVar] private bool _isImmortal = false;
+        [SyncVar] private FNvDamage _lastDamageTaken;
+        
+        public bool IsDead => _isDead;
+        [SyncVar(OnChange = nameof(OnIsDeadChanged))] private bool _isDead;
+        [SerializeField] public UnitComponents UnitComponents;
+        [SerializeField] private BloodController _bloodController;
+        [SerializeField] private DamageNumber _critDamagePrefab;
+        [SerializeField] private DamageNumber _damagePrefab;
+        [SerializeField] private DamageNumber _healPrefab;
+        [SerializeField] private FNArmor _armor;
+        [SerializeField] private Collider[] _damageReceivers;
+        [SerializeField] private bool _isAI;
+        [SerializeField] private bool _isPlayer;
+        private float _healthWithoutConstitution;
+        private DamageSystem _damageSystem;
+        [SerializeField] private Unit unit;
+        public Action<bool> OnCollidersChanged;
+        
+        #endregion
+
+        protected override void OnValidate()
+        {
+            base.OnValidate();
+            AssignComponentsIfRequired();
+        }
+
+        private void AssignComponentsIfRequired()
+        {
+            unit ??= GetComponent<Unit>();
+        }
+
+        private void Awake()
+        {
+            AssignComponentsIfRequired();
+            _armor ??= GetComponent<FNArmor>();
+            if (unit.UnitComps.InvectorManager != null) {
+                _isPlayer = true;
+            }
+            if (unit.UnitComps.AiUnit != null) {
+                _isAI = true;
+            }
+        }
+
+        public override void OnStartNetwork()
+        {
+            base.OnStartNetwork();
+            if (base.Owner.IsLocalClient)
+            {
+                FNvHealthController = GetComponent<FNvHealthController>();
+                FNvHealthController.InitLocalPlayer(this);
+            }
+
+            if (base.IsServer || base.IsHost)
+            {
+                StartCoroutine(OnStatsControllerActivatorListener());
+                
+            }
+        }
+
+        private IEnumerator OnStatsControllerActivatorListener()
+        {
+            yield return new WaitUntil(() => UnitComponents.StatsController != null);
+            yield return new WaitUntil(() => UnitComponents.StatsController.IsStatsActivated);
+            StatsControllerOnOnStatsActivated();
+        }
+
+        public void UpdateDamageSystem(UnitComponents damagerUnit, bool isAllyOnlyForPlayers)
+        {
+            _damageSystem = new DamageSystem(unit.UnitComps, damagerUnit, isAllyOnlyForPlayers);
+        }
+
+        public override void OnStartClient()
+        {
+            base.OnStartClient();
+            GameplayManager.Instance.RegisterDamageReceivers(_damageReceivers, this);
+            if (IsOwner && IsPlayer)
+            {
+                OnChangeCurrentHealthInfo?.Invoke(CurrentHealth);
+            }
+        }
+        
+        private void StatsControllerOnOnStatsActivated()
+        {
+            List<float> healthValues = new List<float>();
+            healthValues.Add(UnitComponents.StatsController.GetAllCurrentValueServerOnly(Stat.STAT_TYPE.HEALTH));
+            if (UnitComponents.AiUnit != null)
+            {
+                healthValues.Add(UnitComponents.AiUnit.EnemyDefinition.MaxHealth);
+            }
+        
+            var healData = new HealData {amount = healthValues.Sum()};
+            SetHealth(HealthType.Max, healData);
+            SetHealth(HealthType.Current, healData);
+            if (FNvHealthController != null)
+            {
+                FNvHealthController.ResetHealth();
+            }
+            Debug.Log($"{ClassName}[InitHealth] {gameObject.name} [{_currentHealth}/{_maxHealth}]");
+            UnitComponents.StatsController.GetStatByType(Stat.STAT_TYPE.HEALTH).OnStatChangedServerOnly += OnHealthAffectingStatChanged;
+            UnitComponents.StatsController.OnStatsActivated -= StatsControllerOnOnStatsActivated;
+        }
+
+        private void OnDestroy()
+        {
+            //Debug.Log($"[FishnetInvectorHealthController][OnDestroy] {gameObject.name} destroyed");
+            FNvProjectileControl.ClearColliderToNetId(this.ObjectId);
+        }
+
+        [Server]
+        public void ResetHealth()
+        {
+            HealData healData = new HealData {amount = unit.UnitComps.StatsController.GetAllCurrentValueServerOnly(Stat.STAT_TYPE.HEALTH)};
+            SetHealth(HealthType.Current, healData);
+            if (IsDead) _isDead = false;
+        }
+
+        [Server]
+        public void Ressurect(float targetHealth)
+        {
+            HealData healData = new HealData {amount = targetHealth};
+            AddHealth(HealthType.Current, healData);
+            _isDead = false;
+        }
+
+        [Server]
+        public virtual void TakeDamage(vDamage damage)
+        {
+            if (IsDead)
+                return;
+            
+            if (CheckIsPlayerRolling()) return;
+
+            if (IsPlayer)
+            {
+                MusicController.PlayCombatMusic();
+            }
+            
+            string logPrefix = ClassName + " [TakeDamage] ";
+            Debug.Log($"{logPrefix}{damage.Sender.name} -> {gameObject.name} damage:{damage.damageValue}; type: {damage.type}", gameObject);
+            var damageSenderObject = GetDamageSender(damage);
+            if (damageSenderObject == null)
+            {
+                Debug.LogError($"{logPrefix} damageSenderObject is null");
+                return;
+            }
+            NetworkConnection damagerConnection = GetDamageSender(damage).Owner;
+            UnitComponents damagerUnit = UnitComponentsManager.GetUnitComponentsServerAndClient(damage.senderNetworkObjectID);
+            
+            if (damagerUnit.HealthController.IsPlayer)
+            {
+                TargetPlayCombatMusic(damagerConnection);
+            }
+            
+            bool isAllyOnlyForPlayers = GameplayManager.Instance.RoomDetails.IsTeamsMode && GameplayManager.Instance.RoomDetails.IsAlly(damagerConnection, Owner);
+
+            UpdateDamageSystem(damagerUnit, isAllyOnlyForPlayers);
+            _damageSystem.TakeDamage(damage);
+            
+            int remainingDamage = damage.damageValue;
+            if (-remainingDamage < float.Epsilon)
+            {
+                Debug.Log($"{logPrefix} OnTakeDamage({damage.damageValue}) invoke", gameObject);
+                _lastDamageTaken = damage.ToFNvDamage();
+                OnTakeDamage?.Invoke(damage);
+            }
+            _healthRecoveryDelay = CurrentHealth <= 0 ? 0 : _healthRecoveryDelay;
+            
+            if (CurrentHealth > 0 && !_isImmortal)
+            {
+                HealData healData = new HealData {abilityId = damage.abilityId, amount = -remainingDamage};
+                // Reduce health:
+                AddHealth(HealthType.Current, healData);
+                if (_bloodController && damage.damageValue > MINIMAL_DAMAGE_TO_SHOW_DAMAGE_VFX)
+                {
+                    Vector3 hitPos = damage.hitPosition == Vector3.zero ? transform.position + Vector3.up * 1.5f : damage.hitPosition;
+                    RpcPlayBloodEffect(hitPos);
+                }
+            }
+            
+            if (damage.IsShowDamage)
+            {
+                TargetShowDamageTextForDamageDealer(damagerConnection, damage.damageValue, damage.IsCriticalDamage);
+            }
+            Debug.Log($"{logPrefix}{gameObject.name} remainingDamage:{remainingDamage} damage:{damage.damageValue}", gameObject);
+        }
+        
+        [TargetRpc]
+        private void TargetPlayCombatMusic(NetworkConnection conn)
+        {
+            MusicController.PlayCombatMusic();
+        }
+
+        private int ArmorBehaviour(vDamage damage, int remainingDamage) {
+            if (_armor != null) {
+                remainingDamage = _armor.TakeHit(damage.damageValue);
+                damage.damageValue = remainingDamage;
+            }
+
+            return remainingDamage;
+        }
+
+        private bool CheckIsPlayerRolling()
+        {
+            if (unit.UnitComps.InvectorManager != null)
+            {
+                if (unit.UnitComps.InvectorManager.ThirdPersonController.isRolling)
+                    return true;
+            }
+
+            return false;
+        }
+
+        [ObserversRpc]
+        public void RpcPlayBloodEffect(Vector3 pos)
+        {
+            InternalPlayBloodEffect(pos);
+        }
+
+        private void InternalPlayBloodEffect(Vector3 pos)
+        {
+            _bloodController.PlayBloodEffect(pos);
+        }
+
+        [ServerRpc(RequireOwnership = false)]
+        public void CmdDealMeDamagePlease(FNvDamage fNvDamage, NetworkConnection senderConn = null)
+        {
+            vDamage damage = fNvDamage.ToVDamage();
+            damage.Sender = transform;
+            TakeDamage(damage);
+        }
+
+        [TargetRpc]
+        public void TargetShowDamageTextForDamageDealer(NetworkConnection conn, float value, bool isCritical = false)
+        {
+            Debug.Log($"[FishnetInvectorHealthController][TargetShowDamageTextForDamageDealer] {gameObject.name} value:{value} isCritical:{isCritical}");
+            if (isCritical)
+            {
+                _critDamagePrefab.Spawn(transform.position + Vector3.up * 1.25f, value, transform);
+            }
+            else
+            {
+                _damagePrefab.Spawn(transform.position + Vector3.up * 1.2f, value, transform);
+            }
+        }
+
+        public static NetworkObject GetDamageSender(vDamage damage)
+        {
+            if (InstanceFinder.ServerManager.Objects.Spawned.ContainsKey(damage.senderNetworkObjectID))
+                return InstanceFinder.ServerManager.Objects.Spawned[damage.senderNetworkObjectID];
+            return null;
+        }
+
+        [Server]
+        private void OnHealthAffectingStatChanged(float newValue)
+        {
+            HealData healData = new HealData {amount = newValue};
+            if (newValue > MaxHealth)
+            {
+                healData = new HealData {amount = newValue};
+                SetHealth(HealthType.Max, healData);
+                
+                float delta = newValue - MaxHealth;
+                healData = new HealData {amount = CurrentHealth + delta};
+                SetHealth(HealthType.Current, healData);
+            }
+            else
+            {
+                healData = new HealData {amount = newValue};
+                if (CurrentHealth > newValue)
+                {
+                    SetHealth(HealthType.Current, healData);
+                }
+                SetHealth(HealthType.Max, healData);
+            }
+        }
+
+        [Server]
+        public void SetHealth(HealthType type, HealData healData)
+        {
+            if (type == HealthType.Current)
+            {
+                if (healData.amount > _maxHealth)
+                {
+                    _currentHealth = _maxHealth;
+                }
+                else
+                {
+                    _currentHealth = healData.amount;
+                }
+            }
+            else if (type == HealthType.Max)
+            {
+                if (FNvHealthController != null)
+                {
+                    FNvHealthController.maxHealth = (int)healData.amount;
+                }
+                _maxHealth = healData.amount;
+            }
+        }
+
+        [Server]
+        public void AddHealth(HealthType type, HealData healData, bool isShowBattleText = true)
+        {
+            float typeAmount = 0;
+            float maxAmount = 0;
+            if (type == HealthType.Current)
+            {
+                typeAmount = CurrentHealth;
+                maxAmount = MaxHealth;
+            }
+            else if (type == HealthType.Max)
+            {
+                typeAmount = MaxHealth;
+                maxAmount = float.MaxValue;
+            }
+    
+            if (healData.amount > float.Epsilon && isShowBattleText)
+                TargetShowHealingTextForOwner(NetworkObject.Owner, healData);
+
+            float newHealth = typeAmount + healData.amount;
+            float clampedHealth = Mathf.Clamp(newHealth, .0f, maxAmount);
+            healData.amount = clampedHealth;
+            SetHealth(type, healData);
+        }
+
+        public Action<HealData> OnHeal;
+
+        public struct HealData
+        {
+            public int abilityId;
+            public int senderNetId;
+            public float amount;
+        }
+        
+        [TargetRpc]
+        private void TargetShowHealingTextForOwner(NetworkConnection conn, HealData healData)
+        {
+            OnHeal?.Invoke(healData);
+            //_healPrefab.Spawn(transform.position + Vector3.up * 1.2f, value, transform);
+        }
+
+        private void OnMaxHealthChange(float prev, float next, bool asServer)
+        {
+            OnHealthChanged?.Invoke(this, HealthType.Max, next);
+            OnMineHealthChanged?.Invoke(HealthType.Max, next);
+        }
+
+        private void OnIsDeadChanged(bool prev, bool isDead, bool asServer)
+        {
+            if (isDead)
+            {
+                if (asServer)
+                {
+                    AddXpToKiller();
+                }
+                
+                OnDead?.Invoke(LastDamageTaken.ToVDamage());
+                TurnOffColliders();
+            }
+            else
+            {
+                OnRessurect?.Invoke();
+                TurnOnColliders();
+            }
+        }
+        
+        private void OnCurrentHealthChange(float prev, float next, bool asServer)
+        {
+            OnHealthChanged?.Invoke(this, HealthType.Current, next);
+            OnMineHealthChanged?.Invoke(HealthType.Current, next);
+            if (asServer)
+            {
+                if (IsDead)
+                {
+                    if (CurrentHealth > float.Epsilon)
+                    {
+                        _isDead = false;
+                    }
+                }
+                else
+                {
+                    if (CurrentHealth < float.Epsilon)
+                    {
+                        _isDead = true;
+                    }
+                }
+            }
+            else
+            {
+                if (next < prev)
+                {
+                    DebugWrite.Log($"[FishnetInvectorHealthController][OnCurrentHealthChange] {gameObject.name} HP prev:{prev} next:{next}; CurrentHealth: {CurrentHealth}");
+                    if (!IsHost)
+                        OnTakeDamage?.Invoke(LastDamageTaken.ToVDamage());
+                }
+
+                if (IsOwner)
+                {
+                    OnChangeCurrentHealthInfo?.Invoke(next);
+                }
+            }
+        }
+
+        public UnityEvent<string> onValueChanged;
+        
+        public void UpdateTextInfo(string newText)
+        {
+            onValueChanged?.Invoke(newText);
+        }
+        
+        public void TurnOnColliders()
+        {
+            OnCollidersChanged?.Invoke(true);
+            SwitchColliders(true);
+        }
+
+        private void TurnOffColliders() {
+            OnCollidersChanged?.Invoke(false);
+            SwitchColliders(false);
+        }
+
+        private void SwitchColliders(bool isOn)
+        {
+            for (int i = 1; i < _damageReceivers.Length; i++)
+            {
+                Debug.Log($"[FishnetInvectorHealthController][SwitchColliders] {gameObject.name}", gameObject);
+                if (_damageReceivers[i] != null)
+                {
+                    _damageReceivers[i].enabled = isOn;
+                }
+            }
+        }
+
+        private static Dictionary<int, FNXpController> _xpControllers;
+
+        private FNXpController GetXpControllerByNetId(int netId)
+        {
+            if (_xpControllers == null)
+            {
+                _xpControllers = new Dictionary<int, FNXpController>();
+            }
+
+            if (!_xpControllers.ContainsKey(netId))
+            {
+                _xpControllers.Add(netId,
+                    InstanceFinder.ServerManager.Objects.Spawned[netId].GetComponent<FNXpController>());
+            }
+
+            return _xpControllers[netId];
+        }
+
+        [Server]
+        protected virtual void AddXpToKiller()
+        {
+            if (LastDamageTaken == null)
+            {
+                Debug.LogError($"{ClassName}[AddXpToKiller] LastDamageTaken is null");
+                return;
+            }
+            int damageSenderId = LastDamageTaken.senderNetworkObjectId;
+            var killerXpController = UnitComponentsManager.GetUnitComponentsServerAndClient(damageSenderId).XpController;
+            if (killerXpController == null)
+                return;
+            if (killerXpController.gameObject.CompareTag("Enemy"))
+                return;
+            
+            var targetStatsController = UnitComponentsManager.GetUnitComponentsServerAndClient(NetworkObject.ObjectId)
+                .StatsController;
+            float xpAmount = (float)targetStatsController.CalculatedXpReward();
+            
+            killerXpController.AddXpToThisUnitObjectIDsTeam(xpAmount);
+        }
+
+        public void AssignDamageReceivers(Collider[] colliders) {
+            _damageReceivers = colliders;
+        }
+
+        [Server]
+        public void Heal(HealData healData)
+        {
+            Debug.Log($"{ClassName}[Heal] {gameObject.name} amount:{healData.amount}");
+            AddHealth(HealthType.Current, healData);
+        }
+
+        [ServerRpc(RequireOwnership = false)] 
+        public void CmdRegisterMeleeHitDamage(FNvDamage fnvDamage)
+        {
+            string logText = $"{ClassName} CmdRegisterDamage SwingCounter: {fnvDamage.SwingCounter}; inputDamage: {fnvDamage.damageValue}";
+            vDamage damage = fnvDamage.ToVDamage();
+            TakeDamage(damage);
+            Debug.Log(logText);
+        }
+        
+        [ServerRpc(RequireOwnership = false)]
+        public void CmdRegisterHitByAI(int npcObjectId, int bodyMemberId, Vector3 hitPosition, NetworkConnection sender = null)
+        {
+            Debug.Log($"{ClassName} RegisterHitByAI AI id: {npcObjectId}; targetUnitId: {NetworkObject.ObjectId}; hitPosition: {hitPosition}; sender: {sender}");
+            var dealerUnitComps = UnitComponentsManager.GetUnitComponentsServerAndClient(npcObjectId);
+            var damageDealingSource = dealerUnitComps.MeleeManager.Members[bodyMemberId].attackObject;
+            vDamage damage = new vDamage();
+            damage.Copy(damageDealingSource.damage);
+            damage.hitPosition = hitPosition;
+            damage.Sender = dealerUnitComps.MeleeManager.transform;
+            damage.senderNetworkObjectID = npcObjectId;
+            TakeDamage(damage);
+        }
+
+        [Server]
+        public void SetImmortal(bool b)
+        {
+            _isImmortal = b;
+        }
+    }
+} 
+
+// Assets\Invector-3rdPersonController\Basic Locomotion\Scripts\ObjectDamage\vDamage.cs:
+ using System;
+using System.Text;
+using _ZombieRoyale.Scripts.Core;
+using FirstGearGames.LobbyAndWorld.Demos.KingOfTheHill;
+using FishNet;
+using UnityEngine;
+namespace Invector
+{
+    [System.Serializable]
+    public class vDamage
+    {
+        [Tooltip("Apply damage to the Character Health")]
+        public int damageValue = 15;
+        [Tooltip("How much stamina the target will lost when blocking this attack")]
+        public float staminaBlockCost = 5;
+        [Tooltip("How much time the stamina of the target will wait to recovery")]
+        public float staminaRecoveryDelay = 1;
+        [Tooltip("Apply damage even if the Character is blocking")]
+        public bool ignoreDefense;
+        [Tooltip("Activated Ragdoll when hit the Character")]
+        public bool activeRagdoll;
+        [vHideInInspector("activeRagdoll"),Tooltip("Time to keep Ragdoll active")]
+        public float senselessTime;
+
+        [Tooltip("0 - for body, 1 - for head, 2 - for heavy")]
+        public float hitHeight;
+        [NonSerialized] public Transform Sender;
+        public int senderNetworkObjectID;
+        [NonSerialized]
+        public Transform receiver;
+        [HideInInspector]
+        public Vector3 hitPosition = Vector3.zero;
+        public bool IsCriticalDamage;
+        public bool hitReaction = true;
+        public bool IsShowDamage = true;
+        [HideInInspector]
+        public int recoil_id = 0;
+        [HideInInspector]
+        public int reaction_id = 0;
+        public string damageType;
+        public DamageType type;
+        [HideInInspector] public byte SwingCounter;
+        [HideInInspector] public Vector3 force;
+        public int abilityId;
+        public int weaponItemId;
+        public enum DamageType {
+            Melee,
+            Arrow,
+            Fire,
+            Ice,
+            Lightning,
+            Poison,
+            Bleeding,
+            Magic,
+            Fall,
+            Shockwave,
+            Explosion,
+            Custom,
+            Trap,
+            Blood,
+            Electric
+        }
+
+        public vDamage()
+        {
+            this.damageValue = 15;
+            this.staminaBlockCost = 5;
+            this.staminaRecoveryDelay = 1;
+            this.hitReaction = true;
+        }
+
+        public void Copy (vDamage source)
+        {
+            this.damageValue = source.damageValue;
+            this.hitPosition = source.hitPosition;
+            this.Sender = source.Sender;
+            this.senderNetworkObjectID = source.senderNetworkObjectID;
+            this.staminaBlockCost = source.staminaBlockCost;
+            this.staminaRecoveryDelay = source.staminaRecoveryDelay;
+            this.ignoreDefense = source.ignoreDefense;
+            this.reaction_id = source.reaction_id;
+            this.recoil_id = source.recoil_id;
+        }
+
+        public vDamage(int value)
+        {
+            this.damageValue = value;
+            this.hitReaction = true;
+        }
+
+        public vDamage(float value, int senderNetworkObjectID, Transform senderTrans, string damageType)
+        {
+            this.senderNetworkObjectID = senderNetworkObjectID;
+            this.Sender = senderTrans;
+            this.damageType = damageType;
+            this.damageValue = (int)value;
+            this.hitReaction = true;
+        }
+
+        public vDamage(int value, bool ignoreReaction)
+        {
+            this.damageValue = value;
+            this.hitReaction = !ignoreReaction;
+            if (ignoreReaction)
+            {
+                this.recoil_id = -1;
+                this.reaction_id = -1;
+            }                
+        }
+
+        public vDamage(vDamage damage)
+        {
+            this.damageValue = damage.damageValue;
+            this.staminaBlockCost = damage.staminaBlockCost;
+            this.staminaRecoveryDelay = damage.staminaRecoveryDelay;
+            this.ignoreDefense = damage.ignoreDefense;
+            this.activeRagdoll = damage.activeRagdoll;
+            this.Sender = damage.Sender;
+            this.receiver = damage.receiver;
+            this.recoil_id = damage.recoil_id;
+            this.reaction_id = damage.reaction_id;
+            this.damageType = damage.damageType;
+            this.hitPosition = damage.hitPosition;
+            this.senselessTime = damage.senselessTime;
+            this.force = damage.force;
+            this.weaponItemId = damage.weaponItemId;
+        }
+
+        /// <summary>
+        /// Calc damage Resuction percentage
+        /// </summary>
+        /// <param name="damageReduction"></param>
+        public void ReduceDamage(float damageReduction)
+        {
+            int result = (int)(this.damageValue - ((this.damageValue * damageReduction) / 100));
+            this.damageValue = result;
+        }
+
+        public FNvDamage ToFNvDamage()
+        {
+            FNvDamage damage = new FNvDamage();
+            damage.damageValue = this.damageValue;
+            damage.staminaBlockCost = this.staminaBlockCost;
+            damage.ignoreDefense = this.ignoreDefense;
+            damage.hitPosition = this.hitPosition;
+            damage.force = this.force;
+            damage.damageType = this.type;
+            damage.senderNetworkObjectId = this.senderNetworkObjectID;
+            damage.weaponItemId = this.weaponItemId;
+            return damage;
+        }
+
+        public void SetDamage(float newValue)
+        {
+            string senderName = Sender == null ? "null" : Sender.name;
+            string receiverName = receiver == null ? "null" : receiver.name;
+            #if UNITY_EDITOR
+            senderName = $"<color=green>{senderName}</color>";
+            receiverName = $"<color=red>{receiverName}</color>";
+            #endif
+            Debug.Log($"[vDamage] SetDamage {senderName} {damageValue}->{newValue} {receiverName}");
+            this.damageValue = (int)newValue;
+        }
+    }
+
+    public class FNvDamage
+    {
+        public int senderNetworkObjectId;
+        public int damageValue;
+        public float staminaBlockCost;
+        public bool ignoreDefense;
+        public float hitHeight;
+        public Vector3 hitPosition;
+        public Vector3 force;
+        public vDamage.DamageType damageType;
+        public byte SwingCounter;
+        public int abilityId;
+        public int weaponItemId;
+        
+        public FNvDamage() { }
+        
+        public vDamage ToVDamage()
+        {
+            vDamage damage = new vDamage();
+            if (InstanceFinder.ServerManager.Objects.Spawned.ContainsKey(senderNetworkObjectId))
+                damage.Sender = InstanceFinder.ServerManager.Objects.Spawned[senderNetworkObjectId].transform;
+            else
+            {
+                var nob = UnitComponentsManager.GetUnitComponentsServerAndClient(senderNetworkObjectId);
+                if (nob == null)
+                    Debug.LogError($"[vDamage] Sender with network object id {senderNetworkObjectId} not found.");
+                else
+                    damage.Sender = nob.HealthController.transform;
+            }
+            damage.damageValue = this.damageValue;
+            damage.staminaBlockCost = this.staminaBlockCost;
+            damage.ignoreDefense = this.ignoreDefense;
+            damage.hitPosition = this.hitPosition;
+            damage.force = this.force;
+            damage.type = this.damageType;
+            damage.senderNetworkObjectID = this.senderNetworkObjectId;
+            damage.SwingCounter = SwingCounter;
+            damage.abilityId = abilityId;
+            damage.weaponItemId = weaponItemId;
+            return damage;
+        }
+    }
+} 
+
+// Assets\-ZombieRoyale\Scripts\Core\UnitComponents.cs:
+ using System;
+using _ZombieRoyale.Scripts.Clients;
+using FishNet.Connection;
+using FishNet.Object;
+using FishnetInvector;
+using UnityEngine;
+using Zomb.Creatures.Helpers;
+
+namespace _ZombieRoyale.Scripts.Core
+{
+    [Serializable]
+    public class UnitComponents {
+        public FishnetInvectorManager InvectorManager;
+        public FishnetInvectorItemManager ItemManager;
+        public FishnetInvectorHealthController HealthController;
+        public FishnetInvectorShooterManager ShooterManager;
+        public FishnetInvectorProjectilesManager ProjectilesManager;
+        public FNStatsController StatsController;
+        public FNXpController XpController;
+        public FNAbilityController AbilityController;
+        public FNvMeleeManager MeleeManager;
+        public AttachmentPoints AttachmentPoints;
+        public AIUnit AiUnit;
+        public TeamUIController TeamUiController;
+        public FishnetInvectorBuffController BuffController;
+        public AnimatorDecorator AnimatorDecorator;
+        public NetworkedActionsAnimator ActionsAnimator;
+        public Transform Trans => HealthController.transform;
+        public NetworkConnection Owner => HealthController.NetworkObject.Owner;
+        public NetworkObject NetworkObject => HealthController.NetworkObject;
+    
+        public UnitComponents(){}
+        public UnitComponents(NetworkObject netObj) {
+            InvectorManager = netObj.GetComponent<FishnetInvectorManager>();
+            ItemManager = netObj.GetComponent<FishnetInvectorItemManager>();
+            HealthController = netObj.GetComponent<FishnetInvectorHealthController>();
+            ShooterManager = netObj.GetComponent<FishnetInvectorShooterManager>();
+            ProjectilesManager = netObj.GetComponent<FishnetInvectorProjectilesManager>();
+            StatsController = netObj.GetComponent<FNStatsController>();
+            XpController = netObj.GetComponent<FNXpController>();
+            AbilityController = netObj.GetComponent<FNAbilityController>();
+            MeleeManager = netObj.GetComponent<FNvMeleeManager>();
+            AttachmentPoints = netObj.GetComponent<AttachmentPoints>();
+            AiUnit = netObj.GetComponent<AIUnit>();
+            TeamUiController = netObj.GetComponent<TeamUIController>();
+            BuffController = netObj.GetComponent<FishnetInvectorBuffController>();
+            AnimatorDecorator = netObj.GetComponent<AnimatorDecorator>();
+            ActionsAnimator = netObj.GetComponent<NetworkedActionsAnimator>();
+        
+            SetParentReference();
+        }
+
+        public void Init()
+        {
+            SetParentReference();
+        }
+
+        private void SetParentReference() {
+            if (ItemManager != null) ItemManager.UnitComponents = this;
+            if (HealthController != null) HealthController.UnitComponents = this;
+            if (ShooterManager != null) ShooterManager.UnitComponents = this;
+            if (ProjectilesManager != null) ProjectilesManager.UnitComponents = this;
+            if (StatsController != null) StatsController.UnitComponents = this;
+            if (XpController != null) XpController.UnitComponents = this;
+            if (AbilityController != null) AbilityController.UnitComponents = this;
+            if (MeleeManager != null) MeleeManager.UnitComponents = this;
+            if (AttachmentPoints != null) AttachmentPoints.UnitComponents = this;
+            if (AiUnit != null) AiUnit.UnitComponents = this;
+            if (TeamUiController != null) TeamUiController.UnitComponents = this;
+            if (BuffController != null) BuffController.UnitComponents = this;
+            if (AnimatorDecorator != null) AnimatorDecorator.UnitComponents = this;
+            if (ActionsAnimator != null) ActionsAnimator.UnitComponents = this;
+        }
+
+        public static UnitComponents AssignUnitComponents(NetworkObject nob)
+        {
+            UnitComponents unitComps = nob.GetComponent<Unit>().UnitComps;
+            unitComps.Init();
+            return unitComps;
+        }
+    }
+} 
+
+// Assets\FishNet Invector\Scripts\Networked\FNStatsController.cs:
+ using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+using _ZombieRoyale.Scripts.Core;
+using DungeonScrollerCore;
+using FishNet.Object;
+using FishNet.Object.Synchronizing;
+using FishnetInvector;
+using Invector.vItemManager;
+using SingletonsExtension;
+using TMPro;
+using UnityEngine;
+using UnityEngine.Serialization;
+
+public class FNStatsController : NetworkBehaviour
+{
+    public UnitComponents UnitComponents { get; set; }
+    public Dictionary<int, CombatEntityStat> StatsDictOnServer => _statsDictOnServer;
+    private Dictionary<int, CombatEntityStat> _statsDictOnServer = new ();
+    public SyncDictionary<byte, float> BaseValueDict => _statBaseValueDict;
+    [SyncObject(ReadPermissions = ReadPermission.OwnerOnly)] private readonly SyncDictionary<byte, float> _statBaseValueDict = new ();
+    
+    public SyncDictionary<byte, float> BonusValueDict => _statBonusValueDict;
+    [SyncObject(ReadPermissions = ReadPermission.OwnerOnly)] private readonly SyncDictionary<byte, float> _statBonusValueDict = new ();
+
+    [FormerlySerializedAs("_defaultStats")] public BaseStat[] DefaultStats;
+    public bool IsStatsActivated { get; private set; }
+    public Action OnStatsActivated;
+    [FormerlySerializedAs("OnStatChanged")] public Action<byte, float> OnStatChangedClientOnly;
+    public StatTexts[] StatTextsArray => _statTexts;
+    [FormerlySerializedAs("statTexts")] [SerializeField] private StatTexts[] _statTexts;
+    public string ClassName => _className ??= StringToHexColor.GetColoredClassName(GetType());
+    private string _className;
+    public Action<float> OnConstitutionChanged;
+    public static Dictionary<Stat.STAT_TYPE, List<Stat.STAT_TYPE>> InfluencerToDerivees { get; private set; }
+    public static Dictionary<Stat.STAT_TYPE, string> StatFormulasFromScriptableObject { get; private set; }
+    private static List<Stat.STAT_TYPE> _sortedStatsListToIterate = new ();
+    private bool _isDebug = true;
+    private void Awake()
+    {
+        StatFormulasFromScriptableObject = StatsInitializer.InitializeStatFormulas();
+        StatsInitializer.Init(this);
+        _statBaseValueDict.OnChange += HandleBaseValueChange;
+        _statBonusValueDict.OnChange += HandleBonusValueChange;      
+    }
+
+    private void OnDisable()
+    {
+        _statBaseValueDict.OnChange -= HandleBaseValueChange;
+        _statBonusValueDict.OnChange -= HandleBonusValueChange;
+    }
+    
+    public void HandleBaseValueChange(SyncDictionaryOperation op, byte statId, float value, bool asServer)
+    {
+        if (asServer && !IsHost)
+            return;
+        
+        StringBuilder sb = new StringBuilder();
+        string methodName = $"{ClassName} [_statBaseValueDict_OnChange] ";
+
+        switch (op)
+        {
+            case SyncDictionaryOperation.Add:
+                sb.Append($"Add ");
+                OnStatChangedClientOnly?.Invoke(statId, value);
+                break;
+            case SyncDictionaryOperation.Remove:
+                sb.Append($"Remove ");
+                break;
+            case SyncDictionaryOperation.Set:
+                sb.Append($"Set ");
+                OnStatChangedClientOnly?.Invoke(statId, value);
+                break;
+            case SyncDictionaryOperation.Clear:
+                sb.Append($"Clear ");
+                break;
+            case SyncDictionaryOperation.Complete:
+                sb.Append($"Complete ");
+                break;
+        }
+        sb.Append($"{methodName} statId: {statId}[{(Stat.STAT_TYPE)statId}]; newValue: {value}");
+    }
+
+    public void HandleBonusValueChange(SyncDictionaryOperation op, byte statId, float value, bool asServer)
+    {
+        if (asServer)
+            return;
+        StringBuilder sb = new StringBuilder();
+        string methodName = $"{ClassName} [_statBaseValueDict_OnChange] ";
+        switch (op)
+        {
+            case SyncDictionaryOperation.Add:
+                sb.Append($"Add ");
+                OnStatChangedClientOnly?.Invoke(statId, value);
+                break;
+            case SyncDictionaryOperation.Remove:
+                sb.Append($"Remove ");
+                break;
+            case SyncDictionaryOperation.Set:
+                sb.Append($"Set ");
+                OnStatChangedClientOnly?.Invoke(statId, value);
+                break;
+            case SyncDictionaryOperation.Clear:
+                sb.Append($"Clear ");
+                break;
+            case SyncDictionaryOperation.Complete:
+                sb.Append($"Complete ");
+                break;
+        }
+
+        sb.Append($"{methodName} statId: {statId}[{(Stat.STAT_TYPE)statId}] = { value }");
+        //Debug.Log(sb.ToString());
+    }
+
+    public override void OnStartNetwork()
+    {
+        base.OnStartNetwork();
+        if (IsServer)
+        {
+            StatsInitializer.RegisterDerivativesSubscriptions(this);
+        }
+    }
+
+    public override void OnStartServer()
+    {
+        base.OnStartServer();
+    }
+
+    public override void OnStartClient()
+    {
+        base.OnStartClient();
+        if (IsOwner)
+        {
+            UnitComponents.MeleeManager.onEquipWeapon.AddListener((item, isEquipped) => StatsSetter.ReloadWeaponEquippedTextStats(item, isEquipped));
+        }
+
+        StartCoroutine(InitStatText());
+    }
+
+    private IEnumerator InitStatText()
+    {
+        yield return new WaitForSeconds(1);
+
+        foreach (var kv in StatsDictOnServer)
+        {
+            {
+                Stat.STAT_TYPE type = (Stat.STAT_TYPE)kv.Key;
+                float baseValue = GetBaseValue(type);
+                StatsTextUpdater.UpdateStatText(this, (byte) kv.Key, baseValue);
+            }
+        }
+
+      //  StatsTextUpdater.UpdateStatText(this, (int) Stat.STAT_TYPE.MOVEMENT_SPEED, GetBaseValue(Stat.STAT_TYPE.MOVEMENT_SPEED));    
+    }
+
+    [Server]
+    public void ReloadEquippedItemStats(int itemId, int unequippedItemId)
+    {
+        if (UnitComponents.AiUnit) return;
+        
+        if (unequippedItemId >= 0)
+        {
+            var unequippedItem = MasterManager.GetVItem(unequippedItemId);
+            foreach (var itemAttribute in unequippedItem.attributes)
+            {
+                Stat.STAT_TYPE statType = itemAttribute.StatType;
+                if (statType == Stat.STAT_TYPE.NONE)
+                    continue;
+
+                CombatEntityStat stat = GetStatByType(statType);
+                stat.RemoveItemChange(unequippedItemId);
+            }
+        }
+        
+        if (itemId >= 0)
+        {
+            var equippedItem = MasterManager.GetVItem(itemId);
+            foreach (var itemAttribute in equippedItem.attributes)
+            {
+                Stat.STAT_TYPE statType = itemAttribute.StatType;
+                if (statType == Stat.STAT_TYPE.NONE)
+                    continue;
+
+                CombatEntityStat stat = GetStatByType(statType);
+                stat.AddItemChange(itemId, CombatEntityStat.Category.ArmorItem, itemAttribute.value);
+            }
+        }
+    }
+
+    private void ApplyDerivedStatValuesIntoDict(Dictionary<Stat.STAT_TYPE, List<float>> changedStats)
+    {
+        GenerateCorrectSortedStatsListIfRequired();
+
+        foreach (Stat.STAT_TYPE statType in _sortedStatsListToIterate)
+        {
+            if (!changedStats.ContainsKey(statType))
+            {
+                continue;
+            }
+
+            if (!StatFormulas.StatsThatChangesOtherStats.Contains(statType))
+            {
+                continue;
+            }
+
+            foreach (var influencedStat in InfluencerToDerivees[statType])
+            {
+                float calculatedValueFromOtherStatsOnly = StatFormulas.CalculateStatValue(this, influencedStat);
+                StatsDictOnServer[(byte)influencedStat].SetChange(CombatEntityStat.Category.InfluenceStats,
+                    calculatedValueFromOtherStatsOnly);
+            }
+        }
+    }
+
+    private static void GenerateCorrectSortedStatsListIfRequired()
+    {
+        if (_sortedStatsListToIterate.Count == 0)
+        {
+            List<Stat.STAT_TYPE> statsOrderedByInfluence = new List<Stat.STAT_TYPE>();
+            foreach (var derivedStat in StatFormulas.DerivedStats)
+            {
+                // get derived stat formula
+                if (!StatFormulasFromScriptableObject.TryGetValue(derivedStat, out string formula))
+                {
+                    Debug.LogError($"[FNStatsController] No formula found for stat: {derivedStat}");
+                    continue;
+                }
+
+                var influenceStats = StatsInitializer.ExtractInfluencersFromFormula(formula);
+                statsOrderedByInfluence.AddRange(influenceStats);
+            }
+
+            List<Stat.STAT_TYPE> statsThatNotInfluenceAnything = new List<Stat.STAT_TYPE>();
+            foreach (Stat.STAT_TYPE statType in Enum.GetValues(typeof(Stat.STAT_TYPE)))
+            {
+                if (StatFormulas.DerivedStats.Contains(statType))
+                {
+                    continue;
+                }
+
+                if (statsOrderedByInfluence.Contains(statType))
+                {
+                    continue;
+                }
+
+                statsThatNotInfluenceAnything.Add(statType);
+            }
+
+            statsThatNotInfluenceAnything.AddRange(statsOrderedByInfluence);
+            statsThatNotInfluenceAnything.AddRange(StatFormulas.DerivedStats);
+            _sortedStatsListToIterate = statsThatNotInfluenceAnything.Distinct().ToList();
+        }
+    }
+
+    [Server]
+    public void RemoveArmorItemStats(vItem item)
+    {
+        ReloadEquippedItemStats(-1, item.id);
+    }
+
+    [Server]
+    public float CalculatedXpReward()
+    {
+        float baseXp = 100;
+        if (UnitComponents.AiUnit)
+        {
+            baseXp = UnitComponents.AiUnit.EnemyDefinition.Experience;
+        }
+        else
+        {
+            baseXp = FNXpController.PARTY_XP_FOR_KILL;
+        }
+        
+        // float totalStats = AllStatsTotal();
+        // float xpReward = baseXp + totalStats * FNXpController.STAT_TO_XP_MULTIPLIER;
+
+        float xpReward = baseXp * FNXpController.STAT_TO_XP_MULTIPLIER;
+        // DebugWrite.Log($"[FNStatsController][XP] Calculated XP reward: {xpReward} (base: {baseXp}, total stats(*{FNXpController.STAT_TO_XP_MULTIPLIER}): {totalStats} ({totalStats * FNXpController.STAT_TO_XP_MULTIPLIER}))", gameObject, _isDebug);
+        return xpReward;
+    }
+    
+    [Server]
+    private float AllStatsTotal() {
+        float total = 0;
+        foreach (var stat in StatsDictOnServer)
+        {
+            if (stat.Key == (int)Stat.STAT_TYPE.XP)
+                continue;
+            total += stat.Value.GetCurrentAmount();
+        }
+        return total;
+    }
+
+    [Server]
+    public List<CombatEntityStat> GetStats()
+    {
+        List<CombatEntityStat> stats = new List<CombatEntityStat>();
+
+        foreach (var stat in StatsDictOnServer)
+        {
+            if (stat.Key == (int)Stat.STAT_TYPE.XP)
+                continue;
+
+            stats.Add(stat.Value);
+        }
+        return stats;
+    }
+
+    public CombatEntityStat GetStatByType(Stat.STAT_TYPE type) {
+        int statId = (int)type;
+        if (StatsDictOnServer.TryGetValue(statId, out CombatEntityStat combatStat)) {
+            return combatStat;
+        }
+        var newStat = new CombatEntityStat();
+        newStat.StatType = type;
+        newStat.SetBaseValue(MasterManager.Instance.StatsLibrary.Stats.Find(x => x.statType == type).baseValue);
+        ApplyDerivedStatValuesIntoDict(new Dictionary<Stat.STAT_TYPE, List<float>> {{type, new List<float>()}});
+        return newStat;
+    }
+    
+    [Server]
+    public void AddChanges(Stat.STAT_TYPE type, CombatEntityStat.Category categorySource, float value)
+    {
+        CombatEntityStat stat = GetStatByType(type);
+        stat.AddChange(categorySource, value);
+    }
+    
+    [Server]
+    public void SetChange(Stat.STAT_TYPE statType, CombatEntityStat.Category category, float value)
+    {
+        CombatEntityStat stat = GetStatByType(statType);
+        stat.SetChange(category, value);
+    }
+    
+    [Server]
+    public void RemoveSingleChange(Stat.STAT_TYPE statType, CombatEntityStat.Category category, float value)
+    {
+        CombatEntityStat stat = GetStatByType(statType);
+        stat.RemoveSingleChange(category, value);
+    }
+    
+    [Server]
+    public void RemoveAllChangesFrom(Stat.STAT_TYPE type, CombatEntityStat.Category source)
+    {
+        CombatEntityStat stat = GetStatByType(type);
+        stat.ClearChangesCategoryFilter(source);
+    }
+    
+    [Server]
+    public void SetSyncedBaseValue(Stat.STAT_TYPE statType, float value)
+    {
+        Debug.Log($"[FNStatsController] SetSyncedBaseValue: {statType} = {value}");
+        byte statId = (byte)statType;
+        if (!BaseValueDict.ContainsKey(statId))
+        {
+            _statBaseValueDict.Add(statId, value);
+        }
+        else
+        {
+            if (!Mathf.Approximately(BaseValueDict[statId], value))
+            {
+                _statBaseValueDict[statId] = value;
+            }
+        }
+    }
+
+    [Server]
+    public void SetSyncedBonusValue(Stat.STAT_TYPE statType, float value)
+    {
+        byte statId = (byte)statType;
+
+        if (!BonusValueDict.ContainsKey(statId))
+        {
+            _statBonusValueDict.Add(statId, value);
+        }
+        else
+        {
+            if (!Mathf.Approximately(BonusValueDict[statId], value))
+            {
+                _statBonusValueDict[statId] = value;
+            }
+        }
+    }
+    
+    public float GetBaseValue(Stat.STAT_TYPE statType)
+    {
+        byte statId = (byte)statType;
+        if (StatsDictOnServer.ContainsKey(statId))
+        {
+            return StatsDictOnServer[statId].GetBaseValue();
+        }
+        return 0f;
+    }
+    
+    public float ClientGetCurrentStatValue(Stat.STAT_TYPE statType)
+    {
+        byte statId = (byte)statType;
+        BonusValueDict.TryGetValue(statId, out float bonusValue);
+        BaseValueDict.TryGetValue(statId, out float baseValue);
+        return baseValue + bonusValue;
+    }
+
+    public float GetBonusValue(Stat.STAT_TYPE statType) {
+        byte statId = (byte)statType;
+        if (BonusValueDict.TryGetValue(statId, out float values)) {
+            return values;
+        }
+        return 0;
+    }
+
+    [Server]
+    public float GetAllCurrentValueServerOnly(Stat.STAT_TYPE statType)
+    {
+        CombatEntityStat stat = GetStatByType(statType);
+        return stat.GetCurrentAmount();
+    }
+
+    public void UpdateDamageStatText()
+    {
+        var damage = CalculateMeleeDamageValue();
+
+        for (int j = 0; j < _statTexts.Length; j++)
+        {
+            if (_statTexts[j].StatType == Stat.STAT_TYPE.DAMAGE)
+            {
+                _statTexts[j].Text.text = $"{damage.ToString("F2")}";
+            }
+        }
+    }
+
+    public float CalculateMeleeDamageValue()
+    {
+        float damage = GetAllCurrentValueServerOnly(Stat.STAT_TYPE.POWER);
+
+        if (UnitComponents.ItemManager != null) {
+            if (UnitComponents.ItemManager.RightHandItemId > 0) {
+                vItem rightHandItem = MasterManager.GetVItem(UnitComponents.ItemManager.RightHandItemId);
+                damage += rightHandItem.GetAttributeValue(Stat.STAT_TYPE.DAMAGE);
+            }else if (UnitComponents.ItemManager.LeftHandItemId > 0) {
+                vItem leftHandItem = MasterManager.GetVItem(UnitComponents.ItemManager.LeftHandItemId);
+                damage += leftHandItem.GetAttributeValue(Stat.STAT_TYPE.DAMAGE);
+            }
+        }
+        return damage;
+    }
+
+    public void SetInfluencerRelations(Dictionary<Stat.STAT_TYPE, List<Stat.STAT_TYPE>> influencerRelations)
+    {
+        InfluencerToDerivees = influencerRelations;
+    }
+    
+    [Server]
+    public bool HasStat(Stat.STAT_TYPE type)
+    {
+        return StatsDictOnServer.ContainsKey((int)type);
+    }
+
+    [Serializable]
+    public class StatTexts
+    {
+        public Stat.STAT_TYPE StatType;
+        public TextMeshProUGUI Text;
+    }
+
+    public void Activate()
+    {
+        IsStatsActivated = true;
+        OnStatsActivated?.Invoke();
+        OnStatChangedClientOnly += (statId, value) => StatsTextUpdater.UpdateStatText(this, statId, value);
+        Debug.Log($"{ClassName} Stats activated on {gameObject.name}");
+    }
+    
+    [Server]
+    public void AddPercentageChange(Stat.STAT_TYPE statType, CombatEntityStat.Category category, float percentage)
+    {
+        CombatEntityStat stat = GetStatByType(statType);
+        float value = stat.GetCurrentAmount() * percentage;
+        stat.AddChange(category, value);
+    }
+
+    [Server] 
+    public void RemovePercentageChange(Stat.STAT_TYPE statType, CombatEntityStat.Category category, float percentage)
+    {
+        CombatEntityStat stat = GetStatByType(statType);
+        float value = stat.GetCurrentAmount() * percentage;
+        stat.RemoveSingleChange(category, value);
+    }
+
+} 
+
+// Assets\-ZombieRoyale\Scripts\Abilities\AbilityScripts\Ability.cs:
+ using System;
+using System.Collections;
+using System.Collections.Generic;
+using _ZombieRoyale.Scripts.Core;
+using DuloGames.UI;
+using FishNet;
+using FishNet.Connection;
+using FishNet.Object;
+using FishnetInvector;
+using Invector;
+using UnityEngine;
+using UnityEngine.Assertions;
+
+[Serializable]
+public class Ability: NetworkBehaviour
+{
+    protected int _rank;
+    [SerializeField] protected AbilityDefinition _abilityDefinition;
+    public Buff Buff => _buff;
+    [SerializeField] protected Buff _buff;
+    [SerializeField] protected bool isPassiveSkill;
+    public static Dictionary<NetworkConnection, uint> StacksCounter { get; private set; } = new ();
+    public static Dictionary<NetworkConnection, uint> RankCounter { get; private set; } = new ();
+    public AbilityDefinition AbilityDefinition => _abilityDefinition;
+    public static Action OnAbilityLearned;
+    public Action<NetworkConnection, byte, uint> OnRankLevelUp;
+    protected string _abilityName => _abilityDefinition.Name;
+    protected GameplayManager _gameplayManager;
+    protected bool _isDebug = true;
+    protected readonly string COLOR_DURATION = "#00F0FF";
+    protected readonly string COLOR_AFFECTING_STAT = "#00F0FF";
+    protected readonly string COLOR_DAMAGE = "#ff3517";
+    protected readonly string COLOR_HEAL = "#0ec949";
+    protected readonly string COLOR_STAT = "#96e33d";
+    protected readonly string COLOR_XP = "#c3eb34";
+    protected readonly string COLOR_COOLDOWN = "#c8e609";
+
+    protected readonly Color DEBUG_SPHERE_DEFAULT_COLOR = new Color(1f, 0f, 0f, 0.5f);
+    protected readonly Color DEBUG_SPHERE_ACTIVATE_COLOR = new Color(1f, 0f, 1f, 0.5f);
+    protected Color _debugSphereColor;
+    protected bool _showDebugSphere;
+    protected Vector3 _debugSpherePos;
+    protected float _debugSphereRadius = 1f;
+
+    public override void OnStartServer()
+    {
+        base.OnStartServer();
+        InstanceFinder.TimeManager.OnTick += OnServerTick;
+    }
+
+    public override void OnStartClient()
+    {
+        base.OnStartClient();
+        InstanceFinder.TimeManager.OnTick += OnClientTick;
+    }
+
+    protected virtual void OnServerTick() { }
+
+    protected virtual void OnClientTick() { }
+
+    public override void OnStopServer()
+    {
+        base.OnStopServer();
+        InstanceFinder.TimeManager.OnTick -= OnServerTick;
+    }
+
+    public override void OnStopClient()
+    {
+        base.OnStopClient();
+        InstanceFinder.TimeManager.OnTick -= OnClientTick;
+    }
+
+    public virtual void InitAbility()
+    {
+        if (_buff != null) 
+        {
+            _buff.Init(GameplayManager.Instance);
+        }
+        else
+        {
+            Debug.LogWarning($"Buff is null during ability {_abilityName} initialization.");
+        }
+    }
+
+    public virtual float CalculateValueBasedOnStacks(uint stacks) => .01f;
+    
+    public virtual int CalculateRankBasedOnStacks(uint stacks) => 1;
+    
+    public virtual float CalculateDamageBasedOnRank(int rank) => 1;
+    
+    public virtual uint GetStacksForRank() => 1;
+    
+    public uint AddRank(NetworkConnection connection)
+    {
+        if (RankCounter.ContainsKey(connection))
+        {
+            RankCounter[connection]++;
+        }
+        else
+        {
+            RankCounter.Add(connection, 1);
+        }
+        OnRankLevelUp?.Invoke(connection, _abilityDefinition.Id, RankCounter[connection]);
+        return RankCounter[connection];
+    }
+
+    public uint ServerAddStack(FNAbilityController abilityController, uint amount)
+    {
+        if (!abilityController.LearnedAbilityDict.ContainsKey(AbilityDefinition.Id))
+        {
+            Debug.LogError($"Ability {AbilityDefinition.Name} is not learned by player {abilityController.gameObject.name}. Cannot add stacks.");
+            return 0;
+        }
+        
+        AbilityInfo targetsAbilityStats = abilityController.LearnedAbilityDict[AbilityDefinition.Id];
+        targetsAbilityStats.Stacks = Math.Max(0, targetsAbilityStats.Stacks + amount);
+        abilityController.AddOrSetAbility(targetsAbilityStats);
+        return targetsAbilityStats.Stacks;
+    }
+    
+    public uint AddStack(NetworkConnection connection)
+    {
+        if (StacksCounter.ContainsKey(connection))
+        {
+            StacksCounter[connection]++;
+        }
+        else
+        {
+            StacksCounter.Add(connection, 1);
+        }
+        
+        if (EnoughStacksToLevelup(connection))
+        {
+            StacksCounter[connection] = 0;
+            AddRank(connection);
+            return 1;
+        }
+        else
+        {
+            return 0;
+        }
+        
+        return StacksCounter[connection];
+    }
+    
+    public UISpellInfo GetUISpellInfo(byte abilityId, uint stacks)
+    {
+        UISpellInfo spellInfo = new UISpellInfo();
+        spellInfo.ID = _abilityDefinition.Id;
+        uint abilityStacksForPlayer = CharacterDataController.Instance.CharacterData.GetAbilityStacks(abilityId);
+        int abilityRankBasedOnStacks = CalculateRankBasedOnStacks(abilityStacksForPlayer);
+        spellInfo.Name = GetAbilityName(abilityRankBasedOnStacks);
+        spellInfo.Icon = _abilityDefinition.Icon;
+        spellInfo.Description = GetAbilityDescription(abilityRankBasedOnStacks, abilityStacksForPlayer);
+        if (_abilityDefinition.IsPassive)
+        {
+            spellInfo.Flags = UISpellInfo_Flags.Passive;
+        }
+        else
+        {
+            AbilityDefinition.RPGAbilityRankData rankData = _abilityDefinition.RanksDatas[0];
+
+            if (rankData != null)
+            {
+                switch (rankData.activationType)
+                {
+                    case AbilityDefinition.AbilityActivationType.Instant:
+                        spellInfo.Flags = UISpellInfo_Flags.InstantCast;
+                        break;
+                    case AbilityDefinition.AbilityActivationType.PreCastedCircle:
+                        spellInfo.Flags = UISpellInfo_Flags.PreCastCircle;
+                        break;
+                    case AbilityDefinition.AbilityActivationType.PreCastedCone:
+                        spellInfo.Flags = UISpellInfo_Flags.PreCastCone;
+                        break;
+                    case AbilityDefinition.AbilityActivationType.PreCastedAim:
+                        spellInfo.Flags = UISpellInfo_Flags.PreCastAim;
+                        break;
+                    default:
+                        spellInfo.Flags = UISpellInfo_Flags.PowerCostInPct;
+                        break;
+
+                }
+
+                spellInfo.Range = rankData.maxRange;
+                spellInfo.Cooldown = rankData.cooldown;
+                if (rankData.castTime > 0)
+                {
+                    spellInfo.CastTime = rankData.castTime;
+                }
+                spellInfo.PowerCost = rankData.manaCost;
+            }
+            else
+            {
+                Debug.LogError($"Ability {spellInfo.Name} does not have rank {abilityId}. Setting default values.");
+            }
+        }
+        return spellInfo;
+    }
+
+    private bool EnoughStacksToLevelup(NetworkConnection connection)
+    {
+        return StacksCounter[connection] >= GetStacksForRank();
+    }
+
+    public virtual string GetAbilityName(int rank) => _abilityDefinition.Name;
+    public virtual string GetAbilityDescription(int rank, uint stacks) => _abilityDefinition.Description;
+    public virtual string GetAbilityDescription(int rank, FNStatsController statsController) => _abilityDefinition.persistDescription;
+    
+    public virtual float GetAbilityCastingTime(int rank, FNStatsController statsController)
+    {
+        float castingTime = _abilityDefinition.RanksDatas[rank].castTime;
+        return castingTime;
+    }
+
+    public virtual IEnumerator Activate(AbilityCastingData data)
+    {
+        yield return null;
+    }
+
+    [Server]
+    protected virtual void CasterBuffApply(Buff.BuffData casterBuffData, float duration = 1f)
+    {
+        Debug.Log($"{_abilityName} Applying caster buff.");
+        _buff.Activate(casterBuffData, new int[]{}, duration:duration);
+    }
+    
+    [Server]
+    public virtual void CasterRemoveBuff(Buff.BuffData casterBuffData)
+    {
+        Debug.Log($"{_abilityName} Removing caster buff.");
+        _buff.RemoveBuff(casterBuffData.ObjectId, casterBuffData.ObjectId);
+    }
+
+    protected virtual List<Collider> TargetsSelection(Transform caster) 
+    {
+        Debug.LogWarning($"{_abilityName} TargetsSelection method has not been implemented yet.");
+        throw new NotImplementedException();
+    }
+
+    [Server]
+    protected void AOEDamageTargets(int casterNetId, float radius, vDamage damage, bool isExcludeSelf = false)
+    {
+        var playerComps = UnitComponentsManager.GetUnitComponentsServerAndClient(casterNetId);
+        var targets = TargetsInSphereSelection(playerComps, radius);
+        for (int i = 0; i < targets.Count; i++) 
+        {
+            if (isExcludeSelf && targets[i] == playerComps.HealthController)
+            {
+                continue;
+            }
+            damage.receiver = targets[i].transform;
+            targets[i].TakeDamage(damage);
+
+            Debug.Log($"[{_abilityDefinition.Name}] Damage applied to {targets[i].name}");
+        }
+    }
+    
+    [Server]
+    protected List<FishnetInvectorHealthController> EnemyTargetsInSphereSelection(Vector3 pos, Buff.BuffData caster, float radius)
+    {
+        //Debug.Log($"{_abilityName} Selecting targets in sphere.");
+        List<FishnetInvectorHealthController> targets = EnemyTargetsInRadius(pos, caster, radius);
+        //Debug.Log($"{_abilityName} {targets.Count} targets found in sphere.");
+        return targets;
+    }
+    
+    [Server]
+    protected List<FishnetInvectorHealthController> TargetsExcludingTagsInSphereSelection(string[] tags, Vector3 pos, Buff.BuffData caster, float radius)
+    {
+        List<FishnetInvectorHealthController> targets = TargetsInRadiusExcludingTags(tags, pos, caster, radius);
+        return targets;
+    }
+    
+    public static List<FishnetInvectorHealthController> TargetsInRadiusExcludingTags(string[] tags, Vector3 pos, Buff.BuffData caster, float radius)
+    {
+        List<FishnetInvectorHealthController> targets = new List<FishnetInvectorHealthController>();
+        
+        //check targets
+        foreach (var possibleTarget in GameplayManager.Instance.UnitCharacters)
+        {
+            var targetNob = UnitComponentsManager.GetUnitComponentsServerAndClient(possibleTarget).NetworkObject;
+            if (targetNob == null)
+                continue;
+            
+            for (int i = 0; i < tags.Length; i++)
+            {
+                if (targetNob.CompareTag(tags[i]))
+                {
+                    continue;
+                }
+            }
+            
+            if (!CommonMath.Math.IsWithinRange(pos, targetNob.transform.position, radius))
+                continue;
+            
+            var targetComps = UnitComponentsManager.GetUnitComponentsServerAndClient(possibleTarget);
+            if (targetComps == null)
+                continue;
+            
+            targets.Add(targetComps.HealthController);
+        }
+        return targets;
+    }
+
+    public static bool IsAlly(UnitComponents caster, UnitComponents target)
+    {
+        var teamClientInstancesMembers = GameplayManager.Instance.RoomDetails.GetActiveClientsFromSameTeam(caster.NetworkObject);
+        if (teamClientInstancesMembers.Contains(target.Owner))
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    public static List<FishnetInvectorHealthController> EnemyTargetsInRadius(Vector3 pos, Buff.BuffData caster, float radius)
+    {
+        List<FishnetInvectorHealthController> targets = new List<FishnetInvectorHealthController>();
+        
+        //check targets
+        foreach (var possibleTarget in GameplayManager.Instance.UnitCharacters)
+        {
+            var targetNob = UnitComponentsManager.GetUnitComponentsServerAndClient(possibleTarget).NetworkObject;
+            if (targetNob == null)
+                continue;
+            
+            if (!CommonMath.Math.IsWithinRange(pos, targetNob.transform.position, radius))
+                continue;
+            
+            var targetComps = UnitComponentsManager.GetUnitComponentsServerAndClient(possibleTarget);
+            if (targetComps == null)
+                continue;
+            
+            Buff.BuffData targetData = new Buff.BuffData(targetComps.HealthController.ObjectId, targetComps.HealthController.gameObject.tag, 0f, caster.abilityId, 0, null, null, 0);
+            if (IsNotValidTargetEnemy(caster, targetData))
+                continue;
+            
+            targets.Add(targetComps.HealthController);
+        }
+
+        return targets;
+    }
+    
+    [Server]
+    protected List<FishnetInvectorHealthController> EnemyTargetsInSphereSelection(Vector3 pos, UnitComponents caster, float radius)
+    {
+        Debug.Log($"{_abilityName} Selecting targets in sphere.");
+
+        List<FishnetInvectorHealthController> targets = new List<FishnetInvectorHealthController>();
+        
+        //check targets
+        foreach (var possibleTarget in GameplayManager.Instance.UnitCharacters)
+        {
+            var targetNob = UnitComponentsManager.GetUnitComponentsServerAndClient(possibleTarget).NetworkObject;
+            var targetComps = UnitComponentsManager.GetUnitComponentsServerAndClient(possibleTarget);
+            if (IsNotValidTargetEnemy(targetComps, caster))
+            {
+                continue;
+            }
+            if (CommonMath.Math.IsWithinRange(pos, targetNob.transform.position, radius))
+            {
+                var unitComps = UnitComponentsManager.GetUnitComponentsServerAndClient(possibleTarget);
+                targets.Add(unitComps.HealthController);
+            }
+        }
+
+        Debug.Log($"{_abilityName} {targets.Count} targets found in sphere.");
+
+        return targets;
+    }
+    
+    [Server]
+    protected List<FishnetInvectorHealthController> TargetsInSphereSelection(UnitComponents caster, float radius)
+    {
+        Debug.Log($"{_abilityName} Selecting targets in sphere.");
+
+        List<FishnetInvectorHealthController> targets = new List<FishnetInvectorHealthController>();
+        
+        //check targets
+        foreach (var target in GameplayManager.Instance.UnitCharacters)
+        {
+            var targetNob = UnitComponentsManager.GetUnitComponentsServerAndClient(target).NetworkObject;
+            var targetComps = UnitComponentsManager.GetUnitComponentsServerAndClient(targetNob.ObjectId);
+            if (IsNotValidTargetEnemy(targetComps, caster))
+            {
+                continue;
+            }
+            if (CommonMath.Math.IsWithinRange(caster.HealthController.transform.position, targetNob.transform.position, radius))
+            {
+                var unitComps = UnitComponentsManager.GetUnitComponentsServerAndClient(target);
+                targets.Add(unitComps.HealthController);
+            }
+        }
+
+        Debug.Log($"{_abilityName} {targets.Count} targets found in sphere.");
+
+        return targets;
+    }
+    
+    [ObserversRpc]
+    protected void RpcShowEffectForObservers(int targetNetId, int abilityId, int rank, float timeout)
+    {
+        Debug.Log($"{_abilityName} Showing effect for observers.");
+
+        GameplayManager.Instance.StartCoroutine(ShowEffectOnTarget(targetNetId, abilityId, rank, timeout));
+    }
+    
+    protected virtual IEnumerator ShowEffectOnTarget(int targetNetId, int abilityId, int rank, float timeout)
+    {
+        Debug.Log($"{_abilityName} Showing effect on target.");
+
+        var targetComps = UnitComponentsManager.GetUnitComponentsServerAndClient(targetNetId);
+
+        if(targetComps == null)
+        {
+            Debug.LogError($"{_abilityName} Target components are null. Cannot show effect on target.");
+            yield break;
+        }
+
+        List<GameObject> effects = new List<GameObject>(); 
+        foreach (var attachementPoint in _abilityDefinition.RanksDatas[rank].FXattachmentPoints)
+        {
+            Assert.IsNotNull(_abilityDefinition.RanksDatas[rank].hitEffect, $"Hit effect is null for {_abilityName}.");
+            Transform pointTransform = targetComps.AttachmentPoints.GetAttachmentPoint(attachementPoint);
+            GameObject effect = Instantiate(_abilityDefinition.RanksDatas[rank].hitEffect, pointTransform.position + Vector3.up, Quaternion.identity, GameplayManager.Instance.transform);
+            effect.transform.SetParent(pointTransform);
+            effects.Add(effect);
+        }
+
+        yield return new WaitForSeconds(timeout);
+        foreach (var effect in effects)
+        {
+            Destroy(effect, timeout);
+        }
+    }
+    
+    public static bool IsNotValidTargetEnemy(Buff.BuffData casterData, Buff.BuffData targetData)
+    {
+        if (casterData.ObjectId == targetData.ObjectId)
+        {
+            return true;
+        }
+
+        int casterTeam = GameplayManager.Instance.GetUnitTeamId(casterData.ObjectId);
+        int targetTeam = GameplayManager.Instance.GetUnitTeamId(targetData.ObjectId);
+        if (casterData.Tag == GameplayManager.TAG_PLAYER)
+        {
+            if (casterTeam == targetTeam)
+            {
+                return true;
+            }
+            return false;
+        }else if (targetData.Tag == GameplayManager.SERVER_AI_CONTROLLED_TAGS[GameplayManager.MONSTER_TAG_ID])
+        {
+            if (casterData.Tag == GameplayManager.SERVER_AI_CONTROLLED_TAGS[GameplayManager.MONSTER_TAG_ID])
+            {
+                return true;
+            }
+            return false;
+        }
+
+        return false;
+    }
+
+    protected bool IsNotValidTargetEnemy(UnitComponents target, UnitComponents caster)
+    {
+        //Debug.Log($"{_abilityName} Checking if target is valid.");
+        if (target == null)
+            return true;
+        
+        if (target == caster)
+        {
+            //Debug.Log($"{_abilityName} Target is the same as caster. Invalid target.");
+            return true;
+        }
+
+        var targetHealthController = target.HealthController;
+        if (targetHealthController == null)
+        {
+            return true;
+        }
+        if (targetHealthController.CompareTag(GameplayManager.TAG_PLAYER))
+        {
+            //Debug.Log($"{_abilityName} Target is a player. Valid target.");
+            return false;
+        }else if (targetHealthController.CompareTag("Enemy"))
+        {
+            //Debug.Log($"{_abilityName} Target is an enemy. Valid target.");
+            if (caster.HealthController.CompareTag("Enemy"))
+            {
+                return true;
+            }
+            return false;
+        }
+
+        //Debug.Log($"{_abilityName} Target does not have a Player or Enemy tag. Invalid target.");
+
+        return false;
+    }
+    
+    protected void DrawDebugSphere(Vector3 pos, float radius)
+    {
+        _debugSpherePos = pos;
+        _debugSphereRadius = radius;
+        _showDebugSphere = true;
+        _debugSphereColor = DEBUG_SPHERE_ACTIVATE_COLOR;
+        StartCoroutine(ResetDebugSphereColorAfterDelay(0.3f));
+    }
+    
+    protected IEnumerator ResetDebugSphereColorAfterDelay(float delay)
+    {
+        yield return new WaitForSeconds(delay);
+        _debugSphereColor = DEBUG_SPHERE_DEFAULT_COLOR;
+        _showDebugSphere = false;
+    }
+    
+    public virtual float CalcAmount(FNStatsController statsController) {
+        return 1f;
+    }
+    
+    public virtual float CalcDuration(FNStatsController statsController) {
+        return 1f;
+    }
+    
+    public bool IsCorrectTarget(int rank, UnitComponents caster, UnitComponents target)
+    {
+        if (AbilityDefinition.RanksDatas[rank].CanHitSelf)
+        {
+            if (caster == target)
+                return true;
+        }
+        bool isAlly = IsAlly(caster, target);
+        
+        if (AbilityDefinition.RanksDatas[rank].CanHitEnemy)
+        {
+            if (!isAlly)
+            {
+                return true;
+            }
+        }
+
+        if (AbilityDefinition.RanksDatas[rank].CanHitAlly)
+        {
+            if (isAlly)
+            {
+                return true;
+            }
+        }
+        
+        return true;
+    }
+
+    public NetworkConnection[] FindNearbyPlayers(Vector3 casterTransformPosition, float distanceSquared)
+    {
+        var playerHeroes = UnitComponentsManager.GetAllPlayersHeroes();
+        List<NetworkConnection> connections = new List<NetworkConnection>();
+        foreach (var hero in playerHeroes)
+        {
+            if (Vector3.SqrMagnitude(hero.transform.position - casterTransformPosition) < distanceSquared)
+            {
+                connections.Add(hero.Owner);
+            }
+        }
+        return connections.ToArray();
+    }
+
+    public class VfxOnClientData/* 48 bytes */
+    {
+        public Vector3 forwardDirection;/* 3×4=12 bytes */
+        public Vector3 waveStartPosition;/* 3×4=12 bytes */
+        public Quaternion rotation;/* 4×4=16 bytes */
+        public float duration;/*  4 bytes */
+        public int rank;/*  4 bytes */
+
+        public VfxOnClientData(){}
+        
+        public VfxOnClientData(Vector3 forwardDirection, Vector3 waveStartPosition, Quaternion rotation, float duration, int rank)
+        {
+            this.forwardDirection = forwardDirection;
+            this.waveStartPosition = waveStartPosition;
+            this.rotation = rotation;
+            this.duration = duration;
+            this.rank = rank;
+        }
+    }
+
+    public class VfxParticle
+    {
+        public int senderId;
+        public int rank;
+        public Transform transform;
+        public ColliderInvoker collider;
+        public Vector3 startPosition;
+        public Vector3 endPosition;
+        public float duration;
+        public double elapsedTime;
+        public List<FishnetInvectorHealthController> alreadyDamaged = new ();
+        
+        public VfxParticle(int senderId, int rank, Transform transform, ColliderInvoker collider, Vector3 startPosition, Vector3 endPosition, float duration, double elapsedTime, List<FishnetInvectorHealthController> alreadyDamaged)
+        {
+            this.senderId = senderId;
+            this.transform = transform;
+            this.collider = collider;
+            this.startPosition = startPosition;
+            this.endPosition = endPosition;
+            this.duration = duration;
+            this.elapsedTime = elapsedTime;
+            this.alreadyDamaged = alreadyDamaged;
+            this.rank = rank;
+        }
+    }
+
+#if UNITY_EDITOR
+    protected void OnDrawGizmos()
+    {
+        if (_showDebugSphere)
+        {
+            Gizmos.color = _debugSphereColor;
+            Gizmos.DrawSphere(_debugSpherePos, _debugSphereRadius);
+        }
+    }
+#endif
+} 
+
+// Assets\-ZombieRoyale\Scripts\Abilities\AbilityScripts\PoisonNova.cs:
+ using System.Collections;
+using System.Linq;
+using _ZombieRoyale.Scripts.Core;
+using FishNet.Object;
+using Invector;
+using UnityEngine;
+using SingletonsExtension;
+using UnityEngine.VFX;
+
+public class PoisonNova : Ability
+{
+    public static readonly float NOVA_RADIUS = 3.6f;
+    private static readonly float POISON_FIELD_DURATION = 10f;
+    private readonly float SMOKE_END_SIZE = 20f;
+    private readonly float TIME_TO_REACH_END_SIZE = 1f;
+    private readonly Stat.STAT_TYPE AFFECTING_STAT = Stat.STAT_TYPE.POWER;
+    private readonly float BASE_DAMAGE_PER_TICK = .018890456f;
+    private readonly float BASE_DURATION = 5f;
+    private const string DESCRIPTION = "Unleashes a wave of toxic energy, poisoning all enemies in its radius upon activation. The poison inflicts [damage] damage over time.";
+    private readonly vDamage.DamageType DAMAGE_TYPE = vDamage.DamageType.Poison;
+    [SerializeField] private NetworkObject networkedParticleSystem;
+    public string ClassName => _className ??= StringToHexColor.GetColoredClassName(GetType());
+    private string _className;
+
+    private float GetPoisonFeildDuration()
+    {
+        return POISON_FIELD_DURATION;
+    }    
+    private float CalculateTickDamage(FNStatsController statsController)
+    {
+        return BASE_DAMAGE_PER_TICK * statsController.GetStatByType(AFFECTING_STAT).CurrentAmount;
+    }
+
+    public override IEnumerator Activate(AbilityCastingData data)
+    {
+        var casterComps = UnitComponentsManager.GetUnitComponentsServerAndClient(data.casterNetId);
+        int abilityId = MasterManager.Instance.AbilityDefinitionHolder.GetAbilityId(_abilityDefinition);
+        var healthController = casterComps.HealthController;
+        NetworkObject nps = Instantiate(networkedParticleSystem, healthController.transform.position, Quaternion.identity);
+        Spawn(nps);
+        RpcShowEffectForObservers(data.casterNetId, abilityId, _rank, GetPoisonFeildDuration());
+
+        Debug.Log($"{ClassName} Activated for unit #{data.casterNetId} with abilityId #{abilityId} and rank {data.rank}");
+        float currentDuration = 0f;
+        float tickTime = 1f;
+        float radius = 1f;
+        Buff.BuffData casterData = new Buff.BuffData(data.casterNetId, healthController.gameObject.tag, 0, AbilityDefinition.Id, 1, null, null, 
+            CalculateTickDamage(casterComps.StatsController));
+
+        vDamage damage = Buff.GetTickDamage(casterComps, casterData, DAMAGE_TYPE);
+        Vector3 poisonCloudPos = healthController.transform.position;
+        while (currentDuration < GetPoisonFeildDuration())
+        {
+            currentDuration += tickTime;
+            InstaBuffApplier(casterData, poisonCloudPos, damage, NOVA_RADIUS);
+            yield return new WaitForSeconds(tickTime);
+        }
+        Despawn(nps);
+    }
+    
+    
+    [Server]
+    private void InstaBuffApplier(Buff.BuffData casterData, Vector3 pos, vDamage damage, float radius)
+    {
+        DrawDebugSphere(pos, radius);
+        var caster = UnitComponentsManager.GetUnitComponentsServerAndClient(casterData.ObjectId);
+        if (caster != null)
+        {
+            damage = UpdateDamage(ref casterData, caster);
+        }
+        var targets = EnemyTargetsInSphereSelection(pos, casterData, radius);
+        //remove duplicates
+        var targetCleared = targets.Distinct().Select(t => t.NetworkObject.ObjectId).ToArray();
+        if (targetCleared.Length == 0)
+        {
+            //Debug.Log($"{ClassName} No targets in sphere.");
+            return;
+        }
+        else
+        {
+            _buff.Activate(casterData, targetCleared, BASE_DURATION, damage);
+            //Debug.Log($"[{ClassName}] Buff activated for {targetCleared.Length} targets.");
+        }
+    }
+
+    private vDamage UpdateDamage(ref Buff.BuffData casterData, UnitComponents caster)
+    {
+        vDamage damage;
+        casterData = new Buff.BuffData(casterData.ObjectId, caster.HealthController.gameObject.tag, 0, AbilityDefinition.Id, 1, null, null,
+            CalculateTickDamage(caster.StatsController));
+        damage = Buff.GetTickDamage(caster, casterData, DAMAGE_TYPE);
+        return damage;
+    }
+
+    protected override IEnumerator ShowEffectOnTarget(int targetNetId, int abilityId, int rank, float timeout)
+    {
+        Debug.Log($"{_abilityName} Showing effect on target.");
+
+        var targetComps = UnitComponentsManager.GetUnitComponentsServerAndClient(targetNetId);
+
+        if (targetComps == null)
+        {
+            Debug.LogError($"[{ClassName}]{_abilityName} Target components are null. Cannot show effect on target.");
+            yield break;
+        }
+
+        Vector3 pos = targetComps.HealthController.transform.position;
+        GameObject effect = Instantiate(_abilityDefinition.RanksDatas[rank].hitEffect, pos, Quaternion.identity);
+        VisualEffect vfxGraph = effect.GetComponent<VisualEffect>();
+        float cloudCurrentSize = vfxGraph.GetFloat("SmokeSize");
+        float timeElapsed = 0f;
+        while (timeElapsed < TIME_TO_REACH_END_SIZE)
+        {
+            cloudCurrentSize = Mathf.Lerp(cloudCurrentSize, SMOKE_END_SIZE, timeElapsed / TIME_TO_REACH_END_SIZE);
+            vfxGraph.SetFloat("SmokeSize", cloudCurrentSize);
+            timeElapsed += Time.deltaTime;
+            yield return null;
+        }
+        Destroy(effect, timeout);
+    }
+
+    public override string GetAbilityDescription(int rank, FNStatsController statsController)
+    {
+        float damage = CalculateTickDamage(statsController);
+        string mainEdited = DESCRIPTION.Replace("[damage]", $"<color={COLOR_DAMAGE}>{damage.ToString("F2")}</color>");
+        mainEdited += I2.Loc.LocalizationManager.GetTermTranslation("Affecting stat") + $": <color={COLOR_AFFECTING_STAT}>{AFFECTING_STAT.ToString()}</color>";
+
+        return $"{mainEdited}";
+    }
+} 
+
+// Assets\-ZombieRoyale\Scripts\Abilities\AbilityScripts\PoisonNova.cs:
+ using System.Collections;
+using System.Linq;
+using _ZombieRoyale.Scripts.Core;
+using FishNet.Object;
+using Invector;
+using UnityEngine;
+using SingletonsExtension;
+using UnityEngine.VFX;
+
+public class PoisonNova : Ability
+{
+    public static readonly float NOVA_RADIUS = 3.6f;
+    private static readonly float POISON_FIELD_DURATION = 10f;
+    private readonly float SMOKE_END_SIZE = 20f;
+    private readonly float TIME_TO_REACH_END_SIZE = 1f;
+    private readonly Stat.STAT_TYPE AFFECTING_STAT = Stat.STAT_TYPE.POWER;
+    private readonly float BASE_DAMAGE_PER_TICK = .018890456f;
+    private readonly float BASE_DURATION = 5f;
+    private const string DESCRIPTION = "Unleashes a wave of toxic energy, poisoning all enemies in its radius upon activation. The poison inflicts [damage] damage over time.";
+    private readonly vDamage.DamageType DAMAGE_TYPE = vDamage.DamageType.Poison;
+    [SerializeField] private NetworkObject networkedParticleSystem;
+    public string ClassName => _className ??= StringToHexColor.GetColoredClassName(GetType());
+    private string _className;
+
+    private float GetPoisonFeildDuration()
+    {
+        return POISON_FIELD_DURATION;
+    }    
+    private float CalculateTickDamage(FNStatsController statsController)
+    {
+        return BASE_DAMAGE_PER_TICK * statsController.GetStatByType(AFFECTING_STAT).CurrentAmount;
+    }
+
+    public override IEnumerator Activate(AbilityCastingData data)
+    {
+        var casterComps = UnitComponentsManager.GetUnitComponentsServerAndClient(data.casterNetId);
+        int abilityId = MasterManager.Instance.AbilityDefinitionHolder.GetAbilityId(_abilityDefinition);
+        var healthController = casterComps.HealthController;
+        NetworkObject nps = Instantiate(networkedParticleSystem, healthController.transform.position, Quaternion.identity);
+        Spawn(nps);
+        RpcShowEffectForObservers(data.casterNetId, abilityId, _rank, GetPoisonFeildDuration());
+
+        Debug.Log($"{ClassName} Activated for unit #{data.casterNetId} with abilityId #{abilityId} and rank {data.rank}");
+        float currentDuration = 0f;
+        float tickTime = 1f;
+        float radius = 1f;
+        Buff.BuffData casterData = new Buff.BuffData(data.casterNetId, healthController.gameObject.tag, 0, AbilityDefinition.Id, 1, null, null, 
+            CalculateTickDamage(casterComps.StatsController));
+
+        vDamage damage = Buff.GetTickDamage(casterComps, casterData, DAMAGE_TYPE);
+        Vector3 poisonCloudPos = healthController.transform.position;
+        while (currentDuration < GetPoisonFeildDuration())
+        {
+            currentDuration += tickTime;
+            InstaBuffApplier(casterData, poisonCloudPos, damage, NOVA_RADIUS);
+            yield return new WaitForSeconds(tickTime);
+        }
+        Despawn(nps);
+    }
+    
+    
+    [Server]
+    private void InstaBuffApplier(Buff.BuffData casterData, Vector3 pos, vDamage damage, float radius)
+    {
+        DrawDebugSphere(pos, radius);
+        var caster = UnitComponentsManager.GetUnitComponentsServerAndClient(casterData.ObjectId);
+        if (caster != null)
+        {
+            damage = UpdateDamage(ref casterData, caster);
+        }
+        var targets = EnemyTargetsInSphereSelection(pos, casterData, radius);
+        //remove duplicates
+        var targetCleared = targets.Distinct().Select(t => t.NetworkObject.ObjectId).ToArray();
+        if (targetCleared.Length == 0)
+        {
+            //Debug.Log($"{ClassName} No targets in sphere.");
+            return;
+        }
+        else
+        {
+            _buff.Activate(casterData, targetCleared, BASE_DURATION, damage);
+            //Debug.Log($"[{ClassName}] Buff activated for {targetCleared.Length} targets.");
+        }
+    }
+
+    private vDamage UpdateDamage(ref Buff.BuffData casterData, UnitComponents caster)
+    {
+        vDamage damage;
+        casterData = new Buff.BuffData(casterData.ObjectId, caster.HealthController.gameObject.tag, 0, AbilityDefinition.Id, 1, null, null,
+            CalculateTickDamage(caster.StatsController));
+        damage = Buff.GetTickDamage(caster, casterData, DAMAGE_TYPE);
+        return damage;
+    }
+
+    protected override IEnumerator ShowEffectOnTarget(int targetNetId, int abilityId, int rank, float timeout)
+    {
+        Debug.Log($"{_abilityName} Showing effect on target.");
+
+        var targetComps = UnitComponentsManager.GetUnitComponentsServerAndClient(targetNetId);
+
+        if (targetComps == null)
+        {
+            Debug.LogError($"[{ClassName}]{_abilityName} Target components are null. Cannot show effect on target.");
+            yield break;
+        }
+
+        Vector3 pos = targetComps.HealthController.transform.position;
+        GameObject effect = Instantiate(_abilityDefinition.RanksDatas[rank].hitEffect, pos, Quaternion.identity);
+        VisualEffect vfxGraph = effect.GetComponent<VisualEffect>();
+        float cloudCurrentSize = vfxGraph.GetFloat("SmokeSize");
+        float timeElapsed = 0f;
+        while (timeElapsed < TIME_TO_REACH_END_SIZE)
+        {
+            cloudCurrentSize = Mathf.Lerp(cloudCurrentSize, SMOKE_END_SIZE, timeElapsed / TIME_TO_REACH_END_SIZE);
+            vfxGraph.SetFloat("SmokeSize", cloudCurrentSize);
+            timeElapsed += Time.deltaTime;
+            yield return null;
+        }
+        Destroy(effect, timeout);
+    }
+
+    public override string GetAbilityDescription(int rank, FNStatsController statsController)
+    {
+        float damage = CalculateTickDamage(statsController);
+        string mainEdited = DESCRIPTION.Replace("[damage]", $"<color={COLOR_DAMAGE}>{damage.ToString("F2")}</color>");
+        mainEdited += I2.Loc.LocalizationManager.GetTermTranslation("Affecting stat") + $": <color={COLOR_AFFECTING_STAT}>{AFFECTING_STAT.ToString()}</color>";
+
+        return $"{mainEdited}";
+    }
+} 
+
+
+
+# TASK: update ColliderProjectile script to deal damage to colliding unit using information from Ability script, also update logic of drawing movement on clients, only to show visual. But server should handle all the logic of damage dealing based on AbilityDefinition that invoked that projectile

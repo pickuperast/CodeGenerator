@@ -1,0 +1,54 @@
+// Assets\-ZombieRoyale\Scripts\Editor\DungeonHolderNetworkedEditor.cs
+using System.Linq;
+using UnityEditor;
+using UnityEngine;
+
+namespace _ZombieRoyale.Scripts.Dungeon.Editor
+{
+    [CustomEditor(typeof(DungeonHolderNetworked))]
+    public class DungeonHolderNetworkedEditor : UnityEditor.Editor
+    {
+        private DungeonHolderNetworked _dungeonHolderNetworked;
+    
+        public override void OnInspectorGUI()
+        {
+            _dungeonHolderNetworked = target as DungeonHolderNetworked;
+            base.OnInspectorGUI();
+
+            GUILayout.Space(20);
+            EditorGUILayout.LabelField("Room Infos:", EditorStyles.boldLabel);
+        
+            if (_dungeonHolderNetworked.RoomInfosDict != null && _dungeonHolderNetworked.RoomInfosDict.Count > 0)
+            {
+                GUILayout.BeginVertical("box");
+                var keys = _dungeonHolderNetworked.RoomInfosDict.Keys.ToArray();
+                foreach (var key in keys)
+                {
+                    GUILayout.BeginHorizontal();
+                    GUILayout.Label($"Room ID: {key}");
+                    var roomInfo = _dungeonHolderNetworked.RoomInfosDict[key];
+                    GUILayout.Label($"Collapsing Time: {roomInfo.CollapsingTime}");
+                    GUILayout.EndHorizontal();
+                }
+                GUILayout.EndVertical();
+            }
+        
+            GUILayout.Space(20);
+            EditorGUILayout.LabelField("Helper:", EditorStyles.boldLabel);
+
+            if (GUILayout.Button("Log Room Infos"))
+            {
+                LogRoomInfos();
+            }
+        }
+    
+        private void LogRoomInfos()
+        {
+            if (_dungeonHolderNetworked.RoomInfosDict == null) return;
+            foreach (var kvp in _dungeonHolderNetworked.RoomInfosDict)
+            {
+                Debug.Log($"Room ID: {kvp.Key}, Collapsing Time: {kvp.Value.CollapsingTime}");
+            }
+        }
+    }
+}

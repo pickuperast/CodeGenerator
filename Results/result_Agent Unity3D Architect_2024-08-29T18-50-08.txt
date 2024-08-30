@@ -1,0 +1,87 @@
+// Assets\-ZombieRoyale\Scripts\Clients\Clothing\Editor\ClothControllerEditor.cs:
+```csharp
+using UnityEngine;
+using UnityEditor;
+
+namespace ClothSystem
+{
+    [CustomEditor(typeof(ClothController))]
+    public class ClothControllerEditor : Editor
+    {
+        private static string[] _dontIncludeMe = new string[] { "Genesis9.Shape", "Genesis9Eyelashes.Shape", "Genesis9Eyes.Shape", "Genesis9Mouth.Shape", "Genesis9Tear.Shape" };
+        
+        public override void OnInspectorGUI()
+        {
+            DrawDefaultInspector();
+
+            ClothController clothController = (ClothController)target;
+
+            if (GUILayout.Button("Generate Cloth ScriptableObjects"))
+            {
+                foreach (Transform child in clothController.transform.GetComponentsInChildren<Transform>(true))
+                {
+                    if (!IsNameEndsWith(child.name, ".Shape")) continue;
+                    
+                    if (IsNeedToSkip(child)) continue;
+                    
+                    if (IsAlreadyInDatabase(child.name, clothController.clothDatabase)) continue;
+                    
+                    Cloth newCloth = CreateInstance<Cloth>();
+                    newCloth.clothName = child.name;
+
+                    string assetPath = $"Assets/-ZombieRoyale/Scripts/Clients/Clothing/Clothes/{child.name}.asset";
+                    AssetDatabase.CreateAsset(newCloth, assetPath);
+                    AssetDatabase.SaveAssets();
+
+                    clothController.clothDatabase.AddCloth(newCloth);
+                }
+
+                EditorUtility.SetDirty(clothController.clothDatabase);
+                AssetDatabase.SaveAssets();
+                AssetDatabase.Refresh();
+            }
+        }
+
+        private bool IsAlreadyInDatabase(string childName, ClothDatabase clothControllerClothDatabase)
+        {
+            foreach (Cloth cloth in clothControllerClothDatabase.clothes)
+            {
+                if (cloth.clothName == childName)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool IsNeedToSkip(Transform child)
+        {
+            if (_dontIncludeMe.Length > 0)
+            {
+                bool skip = false;
+                foreach (string dontInclude in _dontIncludeMe)
+                {
+                    if (child.name == dontInclude)
+                    {
+                        skip = true;
+                        break;
+                    }
+                }
+
+                if (skip)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private bool IsNameEndsWith(string childName, string shape)
+        {
+            return childName.EndsWith(shape);
+        }
+    }
+}
+```

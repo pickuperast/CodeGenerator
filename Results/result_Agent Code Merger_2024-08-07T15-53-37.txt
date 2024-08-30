@@ -1,0 +1,27 @@
+csharp
+using Photon.Pun;
+using UnityEngine;
+
+namespace _ZombieRoyale.Scripts.Dungeon
+{
+    public class CollapsingTimer : MonoBehaviourPunCallbacks
+    {
+        public float CollapsingTime;
+        public float SecondsToCollapse => CollapsingTime - (Time.time - _timerStartTime);
+        public bool RoomIsActive => SecondsToCollapse > 0f;
+        public bool IsRoomActiveIn => SecondsToCollapse < 0f;
+
+        private float _timerStartTime;
+
+        private void Start()
+        {
+            _timerStartTime = Time.time;
+        }
+
+        public void ResetTimer(float collapsingTime)
+        {
+            CollapsingTime = collapsingTime;
+            _timerStartTime = Time.time;
+        }
+    }
+}

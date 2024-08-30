@@ -1,0 +1,37 @@
+// Assets\Sanat\CodeGenerator\ApiGemini\GeminiTools.cs:
+ using System;
+using System.Collections.Generic;
+
+namespace Sanat.ApiGemini
+{
+    public static class GeminiTools
+    {
+        public static string ExtractRoleContent(this List<ChatMessage> messages, string role)
+        {
+            string content = "";
+            foreach (ChatMessage message in messages)
+            {
+                if (message.role == role)
+                {
+                    content += message.content + "\n";
+                }
+            }
+            return content.Trim();
+        }
+
+        public static string ToReadableString(this TimeSpan timeSpan)
+        {
+            string formatted = string.Format("{0}{1}{2}{3}",
+                timeSpan.Days > 0 ? string.Format("{0:0} day{1}, ", timeSpan.Days, timeSpan.Days == 1 ? "" : "s") : "",
+                timeSpan.Hours > 0 ? string.Format("{0:0} hour{1}, ", timeSpan.Hours, timeSpan.Hours == 1 ? "" : "s") : "",
+                timeSpan.Minutes > 0 ? string.Format("{0:0} minute{1}, ", timeSpan.Minutes, timeSpan.Minutes == 1 ? "" : "s") : "",
+                timeSpan.Seconds > 0 ? string.Format("{0:0} second{1}", timeSpan.Seconds, timeSpan.Seconds == 1 ? "" : "s") : "");
+
+            if (formatted.EndsWith(", ")) formatted = formatted.Substring(0, formatted.Length - 2);
+
+            if (string.IsNullOrEmpty(formatted)) formatted = "0 seconds";
+
+            return formatted;
+        }
+    }
+}
