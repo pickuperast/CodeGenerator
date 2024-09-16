@@ -9,6 +9,7 @@ Your answer should contain the list of rows with file path.
 You should not add any additional information to the answer.
 You SHOULD remove "//" and "// " from the beginning of the file path if it is present.
 You should not provide answer in "quotes".
+Extract filepathes only for .cs files
 
 # EXAMPLES:
 

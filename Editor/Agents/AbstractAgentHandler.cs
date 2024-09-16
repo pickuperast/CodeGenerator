@@ -29,7 +29,9 @@ namespace Sanat.CodeGenerator.Agents
         public const string KEY_FIGURE_CLOSE = "[figureClose]";
         public enum ApiProviders { OpenAI, Anthropic, Groq, Gemini }
 
-        protected void SaveResultToFile(string result)
+        public enum Brackets { round, square, curly, angle }
+
+        public void SaveResultToFile(string result)
         {
             string directoryPath = Path.Combine(Application.dataPath, RESULTS_SAVE_FOLDER);
             if (!Directory.Exists(directoryPath))
@@ -57,15 +59,11 @@ namespace Sanat.CodeGenerator.Agents
             Apikeys.openAI = key;
         }
         
-        public void StoreKeys(ApiKeys keys)
-        {
-            Apikeys = keys;
-        }
+        public void StoreKeys(ApiKeys keys) => Apikeys = keys;
 
-        protected virtual Model GetModel()
-        {
-            return Model.GPT4omini;
-        }
+        protected virtual Model GetModel() => Model.GPT4omini;
+        
+        protected virtual string GetGeminiModel() => ApiGeminiModels.Flash;
         
         public static string LoadPrompt(string path)
         {
@@ -184,11 +182,6 @@ namespace Sanat.CodeGenerator.Agents
             );
         }
         
-        protected virtual string GetGeminiModel()
-        {
-            return ApiGeminiModels.Flash;
-        }
-        
         public void AskGemini(string prompt, float temp, Action<string> onComplete) {
             List<ApiGemini.ChatMessage> messages = new List<ApiGemini.ChatMessage>();
             messages.Add(new ApiGemini.ChatMessage("user", prompt));
@@ -202,8 +195,6 @@ namespace Sanat.CodeGenerator.Agents
                 onComplete
             );
         }
-
-        public enum Brackets { round, square, curly, angle }
         
         public static string ClearResult(string input, Brackets bracket = Brackets.square)
         {

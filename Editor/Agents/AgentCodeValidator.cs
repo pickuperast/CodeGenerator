@@ -14,10 +14,7 @@ namespace Sanat.CodeGenerator.Agents
         public string Instructions { get; set; }
         private string _prompt;
 
-        protected override string PromptFilename()
-        {
-            return "UnityCodeValidatorInstructions.md";
-        }
+        protected override string PromptFilename() => "UnityCodeValidatorInstructions.md";
         
         public AgentCodeValidator(ApiKeys apiKeys, string task, string includedCode, string possibleAnswer)
         {
@@ -31,13 +28,10 @@ namespace Sanat.CodeGenerator.Agents
                       $"# TASK: {task}. " +
                       $"# CODE: {includedCode} " +
                       $"# POSSIBLE ANSWER: {possibleAnswer}";
-            SelectedApiProvider = ApiProviders.Gemini;
+            SelectedApiProvider = ApiProviders.OpenAI;
         }
         
-        protected override string GetGeminiModel()
-        {
-            return ApiGeminiModels.Flash;
-        }
+        protected override string GetGeminiModel() => ApiGeminiModels.Pro;
 
         public override void Handle(string input)
         {

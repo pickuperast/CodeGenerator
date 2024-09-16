@@ -27,7 +27,7 @@ namespace Sanat.CodeGenerator.Agents
         {
             Name = "Agent Solution to List of FileContent";
             Description = "Merges code snippets";
-            Temperature = .5f;
+            Temperature = .1f;
             string promptLocation = Application.dataPath + $"{PROMPTS_FOLDER_PATH}{PromptFilename()}";
             Instructions = LoadPrompt(promptLocation);
             string filePathesMerged = string.Join("\n", filePathes);

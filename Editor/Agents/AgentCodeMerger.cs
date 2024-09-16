@@ -17,14 +17,11 @@ namespace Sanat.CodeGenerator.Agents
 		private Dictionary<string, string> _projectCode = new ();
 		private const string PROMPT_FILE_PATH_EXTRACT = "PromptAgentCodeMergerFilePathExtract.md";
 		
-		protected override string PromptFilename() => 
-			"AgentCodeMerger.md";
+		protected override string PromptFilename() => "AgentCodeMerger.md";
 		
-		protected override Model GetModel() => 
-			Model.GPT4omini;
+		protected override Model GetModel() => Model.GPT4omini;
         
-		protected override string GetGeminiModel() => 
-			ApiGeminiModels.Flash;
+		protected override string GetGeminiModel() => ApiGeminiModels.Flash;
 
 		public AgentCodeMerger(ApiKeys apiKeys, Dictionary<string, string> projectCode)
 		{
@@ -53,23 +50,50 @@ namespace Sanat.CodeGenerator.Agents
 		{
 			GetFilePath(solutionInput, (result) =>
 			{
-				var splitted = result.Split(';');
-				string filePath = splitted[0];
+				Debug.Log($"<color=cyan>{Name}</color> GetFilePath Result: {result}");
+				var splitted = result.Split(";");
+				//var filePathesCleared = LeaveOnlyCsFiles(splitted);
 				if (splitted.Length == 1)
 				{
-					Debug.Log($"<color=cyan>{Name}</color> GetFilePath Result: {filePath}");
-					DirectInsertion(result, solutionInput);
+					Debug.Log($"<color=cyan>{Name}</color> working with single path: {result}");
+					DirectInsertion(splitted[0], solutionInput);
 				}else
 				{
 					for (int i = 0; i < splitted.Length; i++)
 					{
-						ExtractCodeContents(solutionInput, splitted);
+						ExtractCodeContents(solutionInput, splitted[i]);
 					}
 				}
 			});
 		}
 
-		private void ExtractCodeContents(string solutionInput, string[] splitted)
+		private List<string> LeaveOnlyCsFiles(string[] splitted)
+		{
+			List<string> cleared = new List<string>();
+			for (int i = 0; i < splitted.Length; i++)
+			{
+				if (splitted[i].EndsWith(".cs"))
+				{
+					cleared.Add(splitted[i]);
+				}
+			}
+
+			return cleared;
+		}
+
+		private void ExtractCodeContents(string solutionInput, string filePath)
+		{
+			Debug.Log($"<color=cyan>{Name}</color> ExtractCodeContents for path: {filePath}");
+			AgentExtractCodeByFilepath agentExtractCodeByFilepath = new AgentExtractCodeByFilepath(Apikeys, filePath);
+			agentExtractCodeByFilepath.SplitToFilePathContent(solutionInput, (result) =>
+			{
+				Debug.Log($"<color=cyan>{Name}</color> ExtractCodeContents Result: {result}");
+				Debug.Log($"<color=cyan>{Name}</color> working with single path: {result}");
+				DirectInsertion(filePath, solutionInput);
+			});
+		}
+
+		private void ExtractCodeContentsOLD(string solutionInput, string[] splitted)
 		{
 			AgentSolutionToDict agentSolutionToDict = new AgentSolutionToDict(Apikeys, splitted);
 			agentSolutionToDict.SplitToFilePathContent(solutionInput, (result) =>
@@ -98,7 +122,7 @@ namespace Sanat.CodeGenerator.Agents
 			string promptLocation = Application.dataPath + $"{PROMPTS_FOLDER_PATH}{PROMPT_FILE_PATH_EXTRACT}";
 			string prompt = LoadPrompt(promptLocation);
 			string question = prompt + solutionInput;
-			BotParameters botParameters = new BotParameters(question, ApiProviders.Gemini, .0f, callback);
+			BotParameters botParameters = new BotParameters(question, ApiProviders.OpenAI, .0f, callback);
 			AskBot(botParameters);
 		}
 
@@ -218,6 +242,10 @@ namespace Sanat.CodeGenerator.Agents
 					list = list.GetRange(1, list.Count - 1);
 				}
 				
+				if (list[0].StartsWith("//"))
+				{
+					list = list.GetRange(1, list.Count - 1);
+				}
 				code = string.Join("\n", list);
 			}
 			// Create the directory if it doesn't exist

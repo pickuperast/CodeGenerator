@@ -46,6 +46,7 @@ namespace Sanat.CodeGenerator
         private const string INCLUDED_FOLDERS_PREFS_KEY = "IncludedFolders";
         public static IncludedFoldersManager IncludedFoldersManager;
         private CodeGeneratorBookmarks bookmarkManager;
+        private Vector2 taskScrollPosition;
 
         [System.Serializable]
         private class IncludedFolder
@@ -64,7 +65,16 @@ namespace Sanat.CodeGenerator
         {
             GUILayout.Space(10);
             EditorGUILayout.LabelField("Task Description", EditorStyles.boldLabel);
-            taskInput = EditorGUILayout.TextArea(taskInput, GUILayout.Height(5 * EditorGUIUtility.singleLineHeight));
+            
+            GUIStyle textAreaStyle = new GUIStyle(EditorStyles.textArea);
+            textAreaStyle.wordWrap = true;
+
+            float textAreaHeight = 3 * EditorGUIUtility.singleLineHeight;
+            
+            taskScrollPosition = EditorGUILayout.BeginScrollView(taskScrollPosition, GUILayout.Height(textAreaHeight));
+            
+            taskInput = EditorGUILayout.TextArea(taskInput, textAreaStyle, GUILayout.ExpandHeight(true));
+            EditorGUILayout.EndScrollView();
             GUILayout.Space(20);
             if (isSettingsVisible)
             {
@@ -264,6 +274,7 @@ namespace Sanat.CodeGenerator
             agentCodeArchitector.OnComplete += (string result) =>
             {
                 Debug.Log($"{agentCodeArchitector.Name} OnComplete: {result.Substring(0,500)}");
+                agentCodeArchitector.SaveResultToFile(result);
                 AgentCodeValidator agentValidator = new AgentCodeValidator(apiKeys, taskInput, includedCode, result);
                 agentValidator.OnComplete += (string validationResult) =>
                 {
@@ -288,7 +299,8 @@ namespace Sanat.CodeGenerator
             string includedCode) 
         {
             AgentCodeMerger agentCodeMergerDirect = agentCodeMerger as AgentCodeMerger;
-            if (validationResult.Substring(0, 5).Equals("VALID"))
+            var firstRow = validationResult.Split('\n')[0];
+            if (firstRow.Contains("1"))
             {
                 Debug.Log($"Validation successful. Proceeding with code merging. validationResult: {validationResult}");
                 agentCodeMergerDirect.InsertCode(result);
