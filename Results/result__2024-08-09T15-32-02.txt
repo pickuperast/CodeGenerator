@@ -1,4 +1,0 @@
-INVALID. 
-The provided solution doesn't correctly display all the fields of the vDamage class. It misses the fields: "senderNetworkObjectID", "hitPosition", "IsCriticalDamage", and "force". 
-
-The logic of the solution is correct in terms of showing the fields. However, it is not completely correct and should also include all the fields from the vDamage class.

@@ -1,8 +1,0 @@
-INVALID. 
-The solution is missing several lines of code that are part of the original, particularly:
-
--  The "hitreactionID" and "hitrecoilID" property fields.
--  The "damageType" property field.
--  The "canCrit" property field.
-
-These fields are still part of the `vDamage` class and should be drawn by the `vDamageDrawer`. The solution only draws the `senselessTime` field conditionally based on the `activeRagdoll` bool value.

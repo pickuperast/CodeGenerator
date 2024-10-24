@@ -1,8 +1,0 @@
-```json
-[
-  {
-    "FilePath": "-ZombieRoyale/Scripts/InRoomSystems/DungeonHolderNetworked.cs",
-    "Content": "using System.Collections.Generic;\nusing UnityEngine;\n\nnamespace _ZombieRoyale.Scripts.Dungeon\n{\n    public class DungeonHolderNetworked : MonoBehaviour\n    {\n        public Dictionary<int, RoomInfo> RoomInfosDict = new Dictionary<int, RoomInfo>();\n\n        private void Awake()\n        {\n            RoomInfosDict = new Dictionary<int, RoomInfo>();\n        }\n\n        public RoomInfo GetRoomInfo(int roomId)\n        {\n            if (!RoomInfosDict.ContainsKey(roomId))\n            {\n                return null;\n            }\n            return RoomInfosDict[roomId];\n        }\n\n        public void AddRoomInfo(RoomInfo roomInfo)\n        {\n            if (!RoomInfosDict.ContainsKey(roomInfo.RoomId))\n            {\n                RoomInfosDict.Add(roomInfo.RoomId, roomInfo);\n            }\n        }\n\n        public void RemoveRoomInfo(int roomId)\n        {\n            if (RoomInfosDict.ContainsKey(roomId))\n            {\n                RoomInfosDict.Remove(roomId);\n            }\n        }\n    }\n}"
-  }
-]
-```

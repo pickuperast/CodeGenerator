@@ -11,14 +11,36 @@ namespace Sanat.CodeGenerator.Agents
         private string _prompt;
 
         protected override string PromptFilename() => "Unity code architector.md";
-        protected override Model GetModel() => Model.GPT4o;
-        protected override string GetGeminiModel() => ApiGeminiModels.Pro;
+
+        protected override Model GetModel()
+        {
+            if (_isModelChanged)
+            {
+                if (_isChangedModelOpenai)
+                {
+                    return _newOpenaiModel;
+                }
+            }
+            return Model.GPT4o1mini;
+        }
+        
+        protected override string GetGeminiModel()
+        {
+            if (_isModelChanged)
+            {
+                if (_isChangedModelGemini)
+                {
+                    return _newGeminiModel;
+                }
+            }
+            return ApiGeminiModels.Pro;
+        }
         
         public AgentCodeArchitector(ApiKeys apiKeys, string task, string includedCode)
         {
             Name = "Agent Unity3D Architect";
             Description = "Writes code for agents";
-            Temperature = .2f;
+            Temperature = .5f;
             StoreKeys(apiKeys);
             string promptLocation = Application.dataPath + $"{PROMPTS_FOLDER_PATH}{PromptFilename()}";
             Instructions = LoadPrompt(promptLocation);
@@ -51,6 +73,29 @@ namespace Sanat.CodeGenerator.Agents
                 SaveResultToFile(result);
             });
             AskBot(botParameters);
+        }
+
+        public void ChangeLLM(ApiProviders provider, Model model = null)
+        {
+            SelectedApiProvider = provider;
+            _isModelChanged = true;
+            if (provider == ApiProviders.OpenAI)
+            {
+                _isChangedModelOpenai = true;
+                _newOpenaiModel = model;
+            }
+        }
+
+        public void ChangeLLM(ApiProviders provider, string geminiModel)
+        {
+            SelectedApiProvider = provider;
+            _isModelChanged = true;
+            if (provider == ApiProviders.Gemini)
+            {
+                _isChangedModelOpenai = false;
+                _isChangedModelGemini = true;
+                _newGeminiModel = geminiModel;
+            }
         }
     }
 }

@@ -1,2 +1,0 @@
-INVALID.
-Explanation: Solution is missing code to add draw default inspector part. Also solution does not show all values from dictionary - it's missing other values like RoomId.

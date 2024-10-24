@@ -1,2 +1,0 @@
-INVALID. 
-The provided code has the logic of scanning every 1f second but it's still calling SetupAndDealDamage every frame in OnTriggerStay. The provided solution doesn't have the code for actually changing the way the damage is applied.

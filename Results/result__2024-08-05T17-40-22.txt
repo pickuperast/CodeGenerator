@@ -1,2 +1,0 @@
-INVALID.
-Explanation: Solution is missing structs for tools functionality. It only added "tools" field to ChatRequest, but it's not enough.

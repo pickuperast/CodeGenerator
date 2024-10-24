@@ -10,7 +10,7 @@ namespace Sanat.ApiOpenAI
 {
     public enum TextModelName 
     { 
-        GPT_4o, GPT_4_Turbo, GPT_4, GPT_4_32K, 
+        GPT_o1_preview, GPT_o1_mini, GPT_4o, GPT_4_Turbo, GPT_4, GPT_4_32K, 
         GPT3_5_Turbo, GPT3_5_Turbo_16K, 
         Davinci, Curie, Babbage, Ada,
         FineTune
@@ -151,6 +151,11 @@ namespace Sanat.ApiOpenAI
             var chatRequest = new ChatRequest(model.Name, messages, 
                 temperature, top_p, frequency_penalty, presence_penalty,
                 maxTokens);
+            if (model == Model.GPT4o1mini)
+            {
+                chatRequest.temperature = 1;
+            }
+            
             string jsonData = JsonUtility.ToJson(chatRequest);
 
             UnityWebRequest webRequest = CreateWebRequest(apiKey, ChatURL, jsonData);
@@ -172,10 +177,8 @@ namespace Sanat.ApiOpenAI
                     var tokensPrompt = responseData.usage.prompt_tokens;
                     var tokensCompletion = responseData.usage.completion_tokens;
                     var tokensTotal = responseData.usage.total_tokens;
-                    var prompt_price = GetPromptPrice(model.Name);
-                    var response_price = GetResponsePrice(model.Name);
-                    var costPrompt = tokensPrompt * prompt_price / 1000;
-                    var costResponse = tokensCompletion * response_price / 1000;
+                    var costPrompt = tokensPrompt * model.InputPrice / 1000000f;
+                    var costResponse = tokensCompletion * model.OutputPrice / 1000000f;
                     var cost = costPrompt + costResponse;
                     Debug.Log($"{model.Name} Usage({cost.ToString("F3")}$): prompt_tokens: {tokensPrompt}; completion_tokens: {tokensCompletion}; total_tokens: {tokensTotal}");
                 }
@@ -183,44 +186,6 @@ namespace Sanat.ApiOpenAI
             };
 
             return asyncOp;
-        }
-
-        private static float GetPromptPrice(string modelName)
-        {
-            if (modelName == Model.GPT4o_16K.Name)
-            {
-                return 0.00025f;
-            }else if (modelName == Model.GPT4o.Name)
-            {
-                return 0.005f;
-            }else if (modelName == Model.GPT4omini.Name)
-            {
-                return 0.00015f;
-            }else if (modelName == Model.GPT3_5_Turbo.Name)
-            {
-                return 0.0005f;
-            }
-
-            return .05f;
-        }
-
-        private static float GetResponsePrice(string modelName)
-        {
-            if (modelName == Model.GPT4o_16K.Name)
-            {
-                return 0.001f;
-            }else if (modelName == Model.GPT4o.Name)
-            {
-                return 0.015f;
-            }else if (modelName == Model.GPT4omini.Name)
-            {
-                return 0.00060f;
-            }else if (modelName == Model.GPT3_5_Turbo.Name)
-            {
-                return 0.0015f;
-            }
-
-            return .05f;
         }
 
         #endregion
@@ -365,5 +330,4 @@ namespace Sanat.ApiOpenAI
             return webRequest;
         }
     }
-
 }

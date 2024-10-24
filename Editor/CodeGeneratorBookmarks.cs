@@ -59,6 +59,11 @@ namespace Sanat.CodeGenerator.Bookmarks
 
         private void DrawBookmarkList()
         {
+            if (bookmarks.Count == 0)
+            {
+                EditorGUILayout.LabelField("No bookmarks saved.");
+                return;
+            }
             bookmarkScrollPosition = EditorGUILayout.BeginScrollView(bookmarkScrollPosition, GUILayout.Height(200));
             bookmarkList.DoLayoutList();
             EditorGUILayout.EndScrollView();
@@ -164,7 +169,7 @@ namespace Sanat.CodeGenerator.Bookmarks
                 return bookmarks;
             }
 
-            return null;
+            return new List<Bookmark>();
         }
 
         public void ExportBookmarks()

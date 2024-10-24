@@ -246,6 +246,11 @@ namespace Sanat.CodeGenerator.Agents
 				{
 					list = list.GetRange(1, list.Count - 1);
 				}
+
+				if (lines[0].StartsWith("```csharp"))
+				{
+					list = list.GetRange(1, list.Count - 1);
+				}
 				code = string.Join("\n", list);
 			}
 			// Create the directory if it doesn't exist
@@ -261,6 +266,7 @@ namespace Sanat.CodeGenerator.Agents
 
 			File.SetAttributes(filePath, FileAttributes.Normal);
 			File.WriteAllText(filePath, code, Encoding.UTF8);
+			OnComplete?.Invoke(code);
 			Debug.Log($"<color=cyan>{Name}</color> <color=green>COMPLETED!</color> [{filePath}] Direct insertion:\n{code}");
 		}
 

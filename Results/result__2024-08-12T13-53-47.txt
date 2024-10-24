@@ -1,2 +1,0 @@
-INVALID.
-Explanation: The solution is trying to use the JOBS System to check for the range of targets in the `TargetsInRadiusExcludingTags` method, however, the logic is missing parts to implement the jobs correctly and the `IsWithinRangeJob` structure is not being used properly.

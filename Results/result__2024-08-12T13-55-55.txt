@@ -1,2 +1,0 @@
-INVALID. 
-Explanation: The `IsWithinRangeJob` is still missing the logic to handle the `caster` parameter and to filter targets based on whether they are allies or enemies. Also, the `TargetsExcludingTagsInSphereSelection` should be filtering targets based on tags, but the job is not checking for that. Lastly, the job should not be adding items directly to the `targets` list, as it can lead to race conditions. A better approach would be to use a `NativeList` to store the results inside the job and then copy them to the `targets` list after the job has completed.

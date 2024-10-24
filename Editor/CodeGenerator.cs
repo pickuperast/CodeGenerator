@@ -6,6 +6,8 @@ using System.IO;
 using System.Linq;
 using System;
 using System.Text.RegularExpressions;
+using Sanat.ApiGemini;
+using Sanat.ApiOpenAI;
 using Sanat.CodeGenerator.Agents;
 using Sanat.CodeGenerator.Bookmarks;
 using Sanat.CodeGenerator.Extensions;
@@ -47,6 +49,8 @@ namespace Sanat.CodeGenerator
         public static IncludedFoldersManager IncludedFoldersManager;
         private CodeGeneratorBookmarks bookmarkManager;
         private Vector2 taskScrollPosition;
+        private const int MAX_ALLOWED_VALIDITY_CHECKINGS = 3;
+        private int _currentRun;
 
         [System.Serializable]
         private class IncludedFolder
@@ -175,6 +179,12 @@ namespace Sanat.CodeGenerator
             {
                 ExecGenerateCode();
             }
+            
+            if (GUILayout.Button("Stop"))
+            {
+                isGeneratingCode = false;
+                EditorApplication.update -= UpdateProgressBar;
+            }
 
             GUI.backgroundColor = Color.white;
             EditorGUILayout.EndHorizontal();
@@ -232,6 +242,7 @@ namespace Sanat.CodeGenerator
         private void ExecGenerateCode()
         {
             isGeneratingCode = true;
+            _currentRun = 0;
             generationProgress = 0f;
             targetProgress = .33f;
             lastProgressUpdateTime = (float)EditorApplication.timeSinceStartup;
@@ -264,12 +275,7 @@ namespace Sanat.CodeGenerator
             // };
             // agentCodeStrategyArchitector.Handle("");
             // return;
-            agentCodeMerger.OnComplete += (string result) =>
-            {
-                UpdateProgress(1f);
-                isGeneratingCode = false;
-                Repaint();
-            };
+            agentCodeMerger.OnComplete += (string result) => { FinishGenerationActions(); };
             
             agentCodeArchitector.OnComplete += (string result) =>
             {
@@ -278,13 +284,16 @@ namespace Sanat.CodeGenerator
                 AgentCodeValidator agentValidator = new AgentCodeValidator(apiKeys, taskInput, includedCode, result);
                 agentValidator.OnComplete += (string validationResult) =>
                 {
-                    Debug.Log($"{agentValidator.Name} OnComplete: {validationResult}");
+                    //Debug.Log($"{agentValidator.Name} OnComplete: {validationResult}");
                     NextStepsAfterArchitector(validationResult, agentCodeMerger, 
                         apiKeys, result, agentSolutionToDicts, 
                         agentCodeArchitector as AgentCodeArchitector, includedCode);
                 };
-                agentValidator.Handle(result);
-                UpdateProgress(0.33f);
+                if (isGeneratingCode)
+                {
+                    agentValidator.Handle(result);
+                    UpdateProgress(0.33f); 
+                }
             };
             agentCodeArchitector.SetNext(null);
             agentCodeArchitector.Handle(generatedPrompt);
@@ -303,35 +312,62 @@ namespace Sanat.CodeGenerator
             if (firstRow.Contains("1"))
             {
                 Debug.Log($"Validation successful. Proceeding with code merging. validationResult: {validationResult}");
+                agentCodeMergerDirect.OnComplete += (string mergedCode) => { FinishGenerationActions(); };
                 agentCodeMergerDirect.InsertCode(result);
             }
             else
             {
-                Debug.Log($"Validation failed. Returning to Architector. validationResult: {validationResult}");
-                agentCodeArchitector.WorkWithFeedback(validationResult, result, (string feedbackResult) =>
+                _currentRun++;
+                if (_currentRun > MAX_ALLOWED_VALIDITY_CHECKINGS || !isGeneratingCode)
                 {
-                    Debug.Log($"Feedback result: {feedbackResult}");
-                    AgentCodeValidator agentValidator = new AgentCodeValidator(apiKeys, taskInput, includedCode, feedbackResult);
-                    agentValidator.OnComplete += (string validationResult) =>
+                    Debug.Log($"Max allowed validity checkings reached. validationResult: {validationResult}");
+                    FinishGenerationActions();
+                    return agentCodeMerger;
+                }
+                else
+                {
+                    Debug.Log($"<color=red>Validation failed.</color> Returning to Architector. validationResult: {validationResult}");
+                    if (_currentRun == 1)
                     {
-                        Debug.Log($"{agentValidator.Name} OnComplete: {validationResult}");
-                        NextStepsAfterArchitector(validationResult, agentCodeMerger, 
-                            apiKeys, result, agentSolutionToDicts, 
-                            agentCodeArchitector, includedCode);
-                    };
-                    agentValidator.Handle(feedbackResult);
-                });
-
-
-                // agentSolutionToDicts.OnComplete += (string result) =>
-                // {
-                //     Debug.Log($"{agentSolutionToDicts.Name} result({result} chars): {result}");
-                //     agentCodeMergerDirect.Handle(result);
-                // };
-                // agentSolutionToDicts.Handle(result);
+                        UpdateProgress(0.4f);
+                        Debug.Log($"Current run: {_currentRun}; model: {Model.GPT4o_16K.Name}");
+                        agentCodeArchitector.ChangeLLM(AbstractAgentHandler.ApiProviders.OpenAI, Model.GPT4o_16K);
+                    }else if (_currentRun == 2)
+                    {
+                        UpdateProgress(0.6f); 
+                        Debug.Log($"Current run: {_currentRun}; model: {ApiGeminiModels.Pro}");
+                        agentCodeArchitector.ChangeLLM(AbstractAgentHandler.ApiProviders.Gemini, ApiGeminiModels.Pro);
+                    }else if (_currentRun == 3)
+                    {
+                        UpdateProgress(0.8f); 
+                        Debug.Log($"Current run: {_currentRun}; model: {Model.GPT4o1mini.Name}");
+                        agentCodeArchitector.ChangeLLM(AbstractAgentHandler.ApiProviders.OpenAI, Model.GPT4o1mini);
+                    }
+                    agentCodeArchitector.WorkWithFeedback(validationResult, result, (string feedbackResult) =>
+                    {
+                        Debug.Log($"Feedback result: {feedbackResult}");
+                        AgentCodeValidator agentValidator = new AgentCodeValidator(apiKeys, taskInput, includedCode, feedbackResult);
+                        agentValidator.OnComplete += (string validationResult) =>
+                        {
+                            Debug.Log($"{agentValidator.Name} OnComplete: {validationResult}");
+                            NextStepsAfterArchitector(validationResult, agentCodeMerger, 
+                                apiKeys, result, agentSolutionToDicts, 
+                                agentCodeArchitector, includedCode);
+                        };
+                        agentValidator.Handle(feedbackResult);
+                    });
+                }
             }
 
             return agentCodeMerger;
+        }
+
+        private void FinishGenerationActions()
+        {
+            UpdateProgress(1f);
+            isGeneratingCode = false;
+            _currentRun = 0;
+            Repaint();
         }
 
         private string GeneratePrompt(Dictionary<string, string> projectCode, int rowsToRemove = 0)
@@ -595,14 +631,32 @@ namespace Sanat.CodeGenerator
             string resultsPathToAdd = Environment.NewLine + "/Assets/" + AbstractAgentHandler.RESULTS_SAVE_FOLDER + Environment.NewLine;
             if (File.Exists(gitignorePath))
             {
+                if (RequiredExclusionsExist(gitignorePath, folderPathToAdd, resultsPathToAdd))
+                {
+                    return;
+                }
                 File.AppendAllText(gitignorePath, folderPathToAdd);
                 File.AppendAllText(gitignorePath, resultsPathToAdd);
             }
             if (File.Exists(ignoreConfPath))
             {
+                if (RequiredExclusionsExist(ignoreConfPath, folderPathToAdd, resultsPathToAdd))
+                {
+                    return;
+                }
                 File.AppendAllText(ignoreConfPath, folderPathToAdd);
                 File.AppendAllText(ignoreConfPath, resultsPathToAdd);
             }
+        }
+
+        private bool RequiredExclusionsExist(string gitignorePath, string folderPathToAdd, string resultsPathToAdd)
+        {
+            string gitignoreContents = File.ReadAllText(gitignorePath);
+            if (gitignoreContents.Contains(folderPathToAdd) && gitignoreContents.Contains(resultsPathToAdd))
+            {
+                return true;
+            }
+            return false;
         }
 
         private bool IsFirstLaunch()

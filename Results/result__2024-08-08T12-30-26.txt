@@ -1,2 +1,0 @@
-INVALID.
-The provided solution does not contain changes to the logic that would make OnTriggerStay check only every 1 second. It only introduces new variable `_damageCoroutine` to keep track of the coroutine which is started in `OnTriggerStay` every frame.

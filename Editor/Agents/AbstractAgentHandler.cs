@@ -30,6 +30,11 @@ namespace Sanat.CodeGenerator.Agents
         public enum ApiProviders { OpenAI, Anthropic, Groq, Gemini }
 
         public enum Brackets { round, square, curly, angle }
+        protected bool _isModelChanged;
+        protected bool _isChangedModelOpenai;
+        protected Model _newOpenaiModel;
+        protected bool _isChangedModelGemini;
+        protected string _newGeminiModel;
 
         public void SaveResultToFile(string result)
         {
@@ -148,7 +153,7 @@ namespace Sanat.CodeGenerator.Agents
                 Apikeys.openAI,
                 model,
                 temp,
-                model.MaxOutput,
+                model.MaxOutputTokens,
                 messages,
                 onComplete
             );
@@ -160,9 +165,9 @@ namespace Sanat.CodeGenerator.Agents
 
             UnityWebRequestAsyncOperation request = Anthropic.SubmitChatAsync(
                 Apikeys.antrophic,
-                ApiAnthropicModels.Claude35,
+                ApiAnthropicModels.Claude35latest,
                 temp,
-                4000,
+                8192,
                 messages,
                 onComplete
             );

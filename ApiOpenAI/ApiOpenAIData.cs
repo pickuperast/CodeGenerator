@@ -1,6 +1,7 @@
 // Copyright (c) Sanat. All rights reserved.
 using System;
 using System.Collections.Generic;
+using UnityEngine.Serialization;
 
 namespace Sanat.ApiOpenAI
 {
@@ -16,17 +17,17 @@ namespace Sanat.ApiOpenAI
         public float top_p;
         public float frequency_penalty;
         public float presence_penalty;
-        public int max_tokens;
+        public int max_completion_token;
 
         public CompletionRequest(string modelName, string prompt, 
             float temperature, float top_p, 
             float frequency_penalty, float presence_penalty,
-            int maxTokens)
+            int maxCompletionToken)
         {
             this.model = modelName;
             this.prompt = prompt;
             this.temperature = temperature;
-            this.max_tokens = maxTokens;
+            this.max_completion_token = maxCompletionToken;
             this.top_p = top_p;
             this.frequency_penalty = frequency_penalty;
             this.presence_penalty = presence_penalty;
@@ -34,12 +35,12 @@ namespace Sanat.ApiOpenAI
 
         public CompletionRequest(string modelName, string prompt,
             float temperature, 
-            int maxTokens)
+            int maxCompletionToken)
         {
             this.model = modelName;
             this.prompt = prompt;
             this.temperature = temperature;
-            this.max_tokens = maxTokens;
+            this.max_completion_token = maxCompletionToken;
             this.top_p = 1;
             this.frequency_penalty = 0;
             this.presence_penalty = 0;
@@ -135,29 +136,29 @@ namespace Sanat.ApiOpenAI
         public float top_p;
         public float frequency_penalty;
         public float presence_penalty;
-        public int max_tokens;
+        public int max_completion_tokens;
 
         public ChatRequest(string modelName, List<ChatMessage> messages, 
             float temperature, float top_p,
             float frequency_penalty, float presence_penalty, 
-            int maxTokens)
+            int maxCompletionTokens)
         {
             this.model = modelName;
             this.messages = messages;
             this.temperature = temperature;
-            this.max_tokens = maxTokens;
+            this.max_completion_tokens = maxCompletionTokens;
             this.top_p = top_p;
             this.frequency_penalty = frequency_penalty;
             this.presence_penalty = presence_penalty;
         }
 
         public ChatRequest(string modelName, List<ChatMessage> messages,
-            float temperature, int maxTokens)
+            float temperature, int maxCompletionTokens)
         {
             this.model = modelName;
             this.messages = messages;
             this.temperature = temperature;
-            this.max_tokens = maxTokens;
+            this.max_completion_tokens = maxCompletionTokens;
             this.top_p = 1;
             this.frequency_penalty = 0;
             this.presence_penalty = 0;

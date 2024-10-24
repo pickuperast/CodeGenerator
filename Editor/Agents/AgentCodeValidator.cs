@@ -7,11 +7,7 @@ namespace Sanat.CodeGenerator.Agents
 {
     public class AgentCodeValidator : AbstractAgentHandler
     {
-        public string Name { get; set; }
-        public string Description { get; set; }
         public string[] Tools { get; set; }
-        public float Temperature { get; set; }
-        public string Instructions { get; set; }
         private string _prompt;
 
         protected override string PromptFilename() => "UnityCodeValidatorInstructions.md";
@@ -28,7 +24,7 @@ namespace Sanat.CodeGenerator.Agents
                       $"# TASK: {task}. " +
                       $"# CODE: {includedCode} " +
                       $"# POSSIBLE ANSWER: {possibleAnswer}";
-            SelectedApiProvider = ApiProviders.OpenAI;
+            SelectedApiProvider = ApiProviders.Anthropic;
         }
         
         protected override string GetGeminiModel() => ApiGeminiModels.Pro;
@@ -38,7 +34,7 @@ namespace Sanat.CodeGenerator.Agents
             Debug.Log($"<color=purple>{Name}</color> asking: {_prompt}");
             BotParameters botParameters = new BotParameters(_prompt, SelectedApiProvider, Temperature, delegate(string result)
             {
-                Debug.Log($"<color=purple>{Name}</color> result: {result}");
+                //Debug.Log($"<color=purple>{Name}</color> result: {result}");
                 OnComplete?.Invoke(result);
                 SaveResultToFile(result);
             });

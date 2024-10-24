@@ -21,5 +21,6 @@ namespace Sanat.ApiAnthropic{
         /// </summary>
         public const string ClaudeInstant = "claude-instant-1";
         public const string Claude35 = "claude-3-5-sonnet-20240620";
+        public const string Claude35latest = "claude-3-5-sonnet-20241022";
     }
 }

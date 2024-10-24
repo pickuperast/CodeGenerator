@@ -1,8 +1,0 @@
-```json
-[
-  {
-    "FilePath": "Assets/-ZombieRoyale/Scripts/ServerLogic/Editor/RoomCollapsingTimerEditor.cs",
-    "Content": "using UnityEngine;\nusing UnityEditor;\n\n[CustomEditor(typeof(RoomCollapsingTimer))]\npublic class RoomCollapsingTimerEditor : Editor\n{\n    public override void OnInspectorGUI()\n    {\n        RoomCollapsingTimer roomCollapsingTimer = (RoomCollapsingTimer)target;\n        EditorGUILayout.LabelField($\"Server Uptime: {roomCollapsingTimer.ServerUptime:F2}\");\n        EditorGUILayout.LabelField($\"Collapsing Time: {roomCollapsingTimer.CollapsingTime:F2}\");\n        base.OnInspectorGUI();\n\n        EditorGUILayout.Space();\n\n        if (GUILayout.Button(\"Activate Lava\"))\n        {\n            roomCollapsingTimer.ActivateLava();\n        }\n    }\n}"
-  }
-]
-```

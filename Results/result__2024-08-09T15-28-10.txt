@@ -1,2 +1,0 @@
-INVALID.
-Explanation: The code is missing the `ignoreDefense` and `activeRagdoll` and other fields that were not changed. This will cause issues because these fields are not being displayed and will be invisible to the user. The solution should include all the fields and the logic for showing or hiding them correctly.
