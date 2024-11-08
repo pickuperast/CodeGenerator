@@ -16,8 +16,8 @@ namespace Sanat.CodeGenerator.Agents
         protected override string PromptFilename() => 
             "Unity code solution to several codes splitter.md";
 
-        protected override Model GetModel() => 
-            Model.GPT4omini;
+        protected override Sanat.ApiOpenAI.Model GetModel() => 
+            Sanat.ApiOpenAI.Model.GPT4omini;
         
         protected override string GetGeminiModel() => 
             ApiGeminiModels.Pro;

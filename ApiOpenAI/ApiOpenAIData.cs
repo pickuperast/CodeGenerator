@@ -271,4 +271,37 @@ namespace Sanat.ApiOpenAI
 
     #endregion
 
+    #region Embeddings
+
+    [System.Serializable]
+    public class EmbeddingRequest
+    {
+        public string input;
+        public string model;
+
+        public EmbeddingRequest(string input, string model)
+        {
+            this.input = input;
+            this.model = model;
+        }
+    }
+
+    [System.Serializable]
+    public class EmbeddingResponse
+    {
+        public string Object;
+        public List<EmbeddingData> data;
+        public string model;
+        public Usage usage;
+    }
+
+    [System.Serializable]
+    public class EmbeddingData
+    {
+        public string Object;
+        public int index;
+        public List<float> embedding;
+    }
+
+    #endregion
 }

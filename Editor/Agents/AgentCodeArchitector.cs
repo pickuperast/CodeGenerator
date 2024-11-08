@@ -12,7 +12,7 @@ namespace Sanat.CodeGenerator.Agents
 
         protected override string PromptFilename() => "Unity code architector.md";
 
-        protected override Model GetModel()
+        protected override Sanat.ApiOpenAI.Model GetModel()
         {
             if (_isModelChanged)
             {
@@ -21,7 +21,7 @@ namespace Sanat.CodeGenerator.Agents
                     return _newOpenaiModel;
                 }
             }
-            return Model.GPT4o1mini;
+            return Sanat.ApiOpenAI.Model.GPT4o1mini;
         }
         
         protected override string GetGeminiModel()
@@ -56,7 +56,7 @@ namespace Sanat.CodeGenerator.Agents
                 Debug.Log($"<color=purple>{Name}</color> result: {result}");
                 OnComplete?.Invoke(result);
                 SaveResultToFile(result);
-            });
+            }, _modelName);
             AskBot(botParameters);
         }
 
@@ -75,26 +75,28 @@ namespace Sanat.CodeGenerator.Agents
             AskBot(botParameters);
         }
 
-        public void ChangeLLM(ApiProviders provider, Model model = null)
+        public void ChangeLLM(ApiProviders provider, string modelName)
         {
             SelectedApiProvider = provider;
+            _modelName = modelName;
             _isModelChanged = true;
-            if (provider == ApiProviders.OpenAI)
+            switch (provider)
             {
-                _isChangedModelOpenai = true;
-                _newOpenaiModel = model;
-            }
-        }
-
-        public void ChangeLLM(ApiProviders provider, string geminiModel)
-        {
-            SelectedApiProvider = provider;
-            _isModelChanged = true;
-            if (provider == ApiProviders.Gemini)
-            {
-                _isChangedModelOpenai = false;
-                _isChangedModelGemini = true;
-                _newGeminiModel = geminiModel;
+                case ApiProviders.OpenAI:
+                    _isChangedModelAnthropic = false;
+                    _isChangedModelOpenai = true;
+                    _isChangedModelGemini = false;
+                    break;
+                case ApiProviders.Gemini:
+                    _isChangedModelAnthropic = false;
+                    _isChangedModelOpenai = false;
+                    _isChangedModelGemini = true;
+                    break;
+                case ApiProviders.Anthropic:
+                    _isChangedModelAnthropic = true;
+                    _isChangedModelOpenai = false;
+                    _isChangedModelGemini = false;
+                    break;
             }
         }
     }

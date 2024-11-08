@@ -33,5 +33,36 @@ namespace Sanat.ApiOpenAI
         public static Model GPT3_5_Turbo { get; } = new Model("gpt-3.5-turbo", ModelType.Chat, 4096, 0.002f, 0.004f, 4096);
         public static Model GPT3_5_Turbo_16K { get; } = new Model("gpt-3.5-turbo-16k", ModelType.Chat, 16384, 0.003f, 0.006f, 16384);
         public static Model Whisper_1 { get; } = new Model("whisper-1", ModelType.Transcription, 65536, 0.006f, 0.006f, 65536);
+
+        public static Model GetModelByName(string modelName)
+        {
+            switch (modelName)
+            {
+                case "o1-mini":
+                    return GPT4o1mini;
+                case "o1-preview":
+                    return GPT4o1preview;
+                case "gpt-4o":
+                    return GPT4o;
+                case "gpt-4o-2024-08-06":
+                    return GPT4o_16K;
+                case "gpt-4o-mini":
+                    return GPT4omini;
+                case "gpt-4-turbo":
+                    return GPT4_Turbo;
+                case "gpt-4":
+                    return GPT4;
+                case "gpt-4-32k":
+                    return GPT4_32K;
+                case "gpt-3.5-turbo":
+                    return GPT3_5_Turbo;
+                case "gpt-3.5-turbo-16k":
+                    return GPT3_5_Turbo_16K;
+                case "whisper-1":
+                    return Whisper_1;
+                default:
+                    return GPT4o1mini;
+            }
+        }
     }
 }

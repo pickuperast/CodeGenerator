@@ -28,6 +28,9 @@ namespace Sanat.CodeGenerator.Bookmarks
         public void DrawBookmarksUI(CodeGenerator codeGeneratorEdotorWindow)
         {
             codeGenerator = codeGeneratorEdotorWindow;
+            if (!codeGenerator.IsSettingsLoaded)
+                return;
+            
             showBookmarks = EditorGUILayout.Foldout(showBookmarks, "Bookmarks", true);
             if (showBookmarks)
             {
@@ -46,7 +49,7 @@ namespace Sanat.CodeGenerator.Bookmarks
             int selectedCategory = EditorGUILayout.Popup("Category", 0, categories);
             if (GUILayout.Button("Save Bookmark", GUILayout.Width(120)))
             {
-                SaveBookmark(new Bookmark(newBookmarkName, codeGenerator.SelectedClassNames, selectedCategory, ""));
+                SaveBookmark(new Bookmark(newBookmarkName, codeGenerator.selectedClassNames, selectedCategory, ""));
                 newBookmarkName = "";
             }
             EditorGUILayout.EndHorizontal();

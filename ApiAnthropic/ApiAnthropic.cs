@@ -10,15 +10,9 @@ namespace Sanat.ApiAnthropic
     {
         public static string BaseURL { get; set; } = "https://api.anthropic.com/v1/";
         public static string MessagesURL => $"{BaseURL}messages";
-        private const float INPUT_PRICE_PER_MILLION_TOKENS = 3f;
-        private const float OUTPUT_PRICE_PER_MILLION_TOKENS = 15f;
+        public static bool IsApiKeyValid(string apiKey) => !string.IsNullOrEmpty(apiKey);
 
-        public static bool IsApiKeyValid(string apiKey)
-        {
-            return !string.IsNullOrEmpty(apiKey);
-        }
-
-        public static UnityWebRequestAsyncOperation SubmitChatAsync(string apiKey, string model, float temp, int maxTokens,
+        public static UnityWebRequestAsyncOperation SubmitChatAsync(string apiKey, Model model, float temp, int maxTokens,
             List<ChatMessage> messages, Action<string> callback)
         {
             var chatRequest = new ChatRequest(model, temp, messages, maxTokens);
@@ -44,11 +38,11 @@ namespace Sanat.ApiAnthropic
                     var tokensCompletion = responseData.usage.output_tokens;
                     var tokensTotal = tokensPrompt + tokensCompletion;
                     
-                    float inputCost = (tokensPrompt / 1000000f) * INPUT_PRICE_PER_MILLION_TOKENS;
-                    float outputCost = (tokensCompletion / 1000000f) * OUTPUT_PRICE_PER_MILLION_TOKENS;
+                    float inputCost = (tokensPrompt / 1000000f) * model.InputPricePerMil;
+                    float outputCost = (tokensCompletion / 1000000f) * model.OutputPricePerMil;
                     float totalCost = inputCost + outputCost;
                     
-                    Debug.Log($"{model} Usage({totalCost:F3}$): input_tokens: {tokensPrompt} (${inputCost:F6}); " +
+                    Debug.Log($"{model.Name} Usage({totalCost:F3}$): input_tokens: {tokensPrompt} (${inputCost:F6}); " +
                               $"output_tokens: {tokensCompletion} (${outputCost:F6}); " +
                               $"total_tokens: {tokensTotal}");
                 }
@@ -83,9 +77,9 @@ namespace Sanat.ApiAnthropic
         public float temperature;
         public List<ChatMessage> messages;
 
-        public ChatRequest(string model, float temperature, List<ChatMessage> messages, int maxTokens)
+        public ChatRequest(Model model, float temperature, List<ChatMessage> messages, int maxTokens)
         {
-            this.model = model;
+            this.model = model.Name;
             this.max_tokens = maxTokens;
             this.temperature = temperature;
             this.messages = messages;

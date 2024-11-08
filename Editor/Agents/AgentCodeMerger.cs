@@ -223,37 +223,43 @@ namespace Sanat.CodeGenerator.Agents
 
 			return filePathList;
 		}
-
+		
 		protected void DirectInsertion(string filePath, string code)
 		{
 			SaveResultToFile(code);
 			filePath = filePath.Replace(":", string.Empty);
 			
-			var lines = code.Split('\n');
-			if (lines[lines.Length - 1] == "```")
+			var match = Regex.Match(code, @"```csharp\s*([\s\S]*?)```");
+			if (match.Success)
 			{
-				//remove the last line
-				
-				var list = lines.ToList();
-				
-				list = list.GetRange(0, list.Count - 1);
-				if (lines[1] == "```")
-				{
-					list = list.GetRange(1, list.Count - 1);
-				}
-				
-				if (list[0].StartsWith("//"))
-				{
-					list = list.GetRange(1, list.Count - 1);
-				}
-
-				if (lines[0].StartsWith("```csharp"))
-				{
-					list = list.GetRange(1, list.Count - 1);
-				}
-				code = string.Join("\n", list);
+				code = match.Groups[1].Value.Trim();
 			}
-			// Create the directory if it doesn't exist
+			else
+			{
+				var lines = code.Split('\n');
+				if (lines[lines.Length - 1] == "```")
+				{
+					var list = lines.ToList();
+					list = list.GetRange(0, list.Count - 1);
+                
+					if (lines[1] == "```")
+					{
+						list = list.GetRange(1, list.Count - 1);
+					}
+                
+					if (list[0].StartsWith("//"))
+					{
+						list = list.GetRange(1, list.Count - 1);
+					}
+
+					if (lines[0].StartsWith("```csharp"))
+					{
+						list = list.GetRange(1, list.Count - 1);
+					}
+					code = string.Join("\n", list);
+				}
+			}
+            
 			string directoryPath = Path.GetDirectoryName(filePath);
 			if (!Directory.Exists(directoryPath))
 			{
@@ -285,7 +291,7 @@ namespace Sanat.CodeGenerator.Agents
 			string newInstructions = Instructions.Replace("@CODE@", JsonConvert.SerializeObject(bakedCode, Formatting.Indented));
 			newInstructions = newInstructions.Replace("@DELTA@", solutionInput);
 			Debug.Log($"<color=cyan>{Name}</color> asking: {newInstructions}");
-			AskAntrophic(newInstructions, .0f, (jsonResponse) =>
+			AskAntrophic(ApiAnthropic.Model.Haiku35Latest, newInstructions, .0f, (jsonResponse) =>
 			{
 				Debug.Log($"<color=cyan>{Name}</color> result: {jsonResponse}");
         

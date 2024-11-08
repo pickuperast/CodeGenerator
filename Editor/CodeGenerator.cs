@@ -6,226 +6,137 @@ using System.IO;
 using System.Linq;
 using System;
 using System.Text.RegularExpressions;
+using Cysharp.Threading.Tasks;
 using Sanat.ApiGemini;
 using Sanat.ApiOpenAI;
 using Sanat.CodeGenerator.Agents;
 using Sanat.CodeGenerator.Bookmarks;
+using Sanat.CodeGenerator.CodebaseRag;
+using Sanat.CodeGenerator.Editor;
 using Sanat.CodeGenerator.Extensions;
 
 namespace Sanat.CodeGenerator
 {
     public class CodeGenerator : EditorWindow
     {
-        public List<string> SelectedClassNames => selectedClassNames;
-        private List<string> selectedClassNames = new();
-        private Vector2 scrollPosition;
-        private Dictionary<string, string> classToPath = new();
-        private string classNameInput = "";
-        private string generatedPrompt = "";
-        private string taskInput = "";
-        private float buttonAnimationTime = 1f;
-        private float buttonAnimationProgress = 0f;
-        private bool isButtonAnimating = false;
-        private Color buttonColor = Color.green;
-        private bool isSettingsVisible = false;
-        private string geminiApiKey = "";
-        private string openaiApiKey = "";
-        private string antrophicApiKey = "";
-        private string groqApiKey = "";
-        public static string GeminiProjectName = "";
-        private bool _isAwaitingReply;
-        private List<string> _ignoredFolders = new();
-        private bool isGeneratingCode = false;
-        private float generationProgress = 0f;
-        private float lastProgressUpdateTime = 0f;
-        private float targetProgress = 0f;
+        #region Fields
+        private CodeGeneratorSettingsManager _settingsManager;
+        private CodeGeneratorUIRenderer _uiRenderer;
+        private CodeGeneratorPreparationHelper _preparationHelper;
+        private RagProcessor _ragProcessor; 
+
+        // UI State
+        public Vector2 scrollPosition;
+        public Vector2 taskScrollPosition;
+        public string classNameInput = "";
+        public string taskInput = "";
+        public bool isSettingsVisible;
+        public bool isAgentSettingsVisible;
+        public Dictionary<string, AgentModelSettings> agentModelSettings = new();
+        public bool IsSettingsLoaded;
+
+        // API Keys/Settings  
+        public string geminiApiKey, openaiApiKey, antrophicApiKey, groqApiKey;
+        public string supabaseUrl, supabaseKey;
+        public string tableName;
+        public bool isRag;
+        public string GeminiProjectName;
+
+        // Generation State
+        public string generatedPrompt = "";
+        public bool isGeneratingCode;
+        public float generationProgress;
+        private float lastProgressUpdateTime;
+        private float targetProgress;
         private float progressSpeed = 0.00001f;
-        private const string PLUGIN_NAME = "<color=#FFD700>Code Generator</color> ";
-        private const string PROMPTS_SAVE_FOLDER = "Sanat/CodeGenerator/Prompts";
-        public const string PREFS_GEMINI_PROJECT_NAME = "GeminiProjectName";
-        private const string PREFS_KEY_TASK = "Task";
-        private List<IncludedFolder> includedFolders = new();
-        private const string INCLUDED_FOLDERS_PREFS_KEY = "IncludedFolders";
-        public static IncludedFoldersManager IncludedFoldersManager;
-        private CodeGeneratorBookmarks bookmarkManager;
-        private Vector2 taskScrollPosition;
         private const int MAX_ALLOWED_VALIDITY_CHECKINGS = 3;
         private int _currentRun;
 
+        // Button Animation
+        private float buttonAnimationTime = 1f;
+        private float buttonAnimationProgress;
+        public bool isButtonAnimating;
+        public Color buttonColor = Color.green;
+
+        // Project Data
+        public List<string> selectedClassNames = new();
+        public Dictionary<string, string> classToPath = new();
+        public List<string> _ignoredFolders = new();
+        public List<IncludedFolder> includedFolders = new();
+        public static IncludedFoldersManager IncludedFoldersManager;
+
+        // Constants
+        private const string PLUGIN_NAME = "Code Generator ";
+        private const string PROMPTS_SAVE_FOLDER = "Sanat/CodeGenerator/Prompts";
+        public const string PREFS_GEMINI_PROJECT_NAME = "GeminiProjectName";
+        public const string PREFS_KEY_TASK = "Task";
+        public const string INCLUDED_FOLDERS_PREFS_KEY = "IncludedFolders";
+
+        // Managers
+        public CodeGeneratorBookmarks bookmarkManager;
+        #endregion
+        public RagProcessor ragProcessor;
+
         [System.Serializable]
-        private class IncludedFolder
+        public class IncludedFolder
         {
             public string path;
             public bool isEnabled;
         }
 
         [MenuItem("Tools/Sanat/CodeGenerator")]
-        public static void ShowWindow()
+        public static void ShowWindow() => GetWindow<CodeGenerator>("Code Generator");
+
+        private async void OnEnable()
         {
-            GetWindow<CodeGenerator>("Code Generator");
+            InitializeManagers();
+            await LoadSettingsDelayedAsync();
+            //_settingsManager.LoadSettings(this);
         }
-
-        private void OnGUI()
+        
+        private async UniTask LoadSettingsDelayedAsync()
         {
-            GUILayout.Space(10);
-            EditorGUILayout.LabelField("Task Description", EditorStyles.boldLabel);
-            
-            GUIStyle textAreaStyle = new GUIStyle(EditorStyles.textArea);
-            textAreaStyle.wordWrap = true;
+            await UniTask.Delay(System.TimeSpan.FromSeconds(10), DelayType.DeltaTime, PlayerLoopTiming.Update);
+            _settingsManager.LoadSettings(this);
+        }
+        
+        private void OnGUI() => _uiRenderer.RenderMainUI(this);
 
-            float textAreaHeight = 3 * EditorGUIUtility.singleLineHeight;
-            
-            taskScrollPosition = EditorGUILayout.BeginScrollView(taskScrollPosition, GUILayout.Height(textAreaHeight));
-            
-            taskInput = EditorGUILayout.TextArea(taskInput, textAreaStyle, GUILayout.ExpandHeight(true));
-            EditorGUILayout.EndScrollView();
-            GUILayout.Space(20);
-            if (isSettingsVisible)
-            {
-                DrawSettingsFields();
-            }
-            EditorGUILayout.LabelField("Select Class Names:", EditorStyles.boldLabel);
-            if (GUILayout.Button("Refresh Class List"))
-            {
-                RefreshClassList();
-            }
-            string settingsButtonLabel = isSettingsVisible ? "Close Settings" : "Settings";
-            if (GUILayout.Button(settingsButtonLabel))
-            {
-                isSettingsVisible = !isSettingsVisible;
-            }
-            EditorGUILayout.Space();
-            classNameInput = EditorGUILayout.TextField("Class Name", classNameInput);
-            if (!string.IsNullOrEmpty(classNameInput))
-            {
-                List<string> filteredSuggestions = new List<string>();
-                foreach (var kv in classToPath)
-                {
-                    if (!kv.Key.StartsWith(classNameInput, StringComparison.CurrentCultureIgnoreCase))
-                        continue;
+        private void OnDisable() => _settingsManager.SaveSettings(this);
+        
+        private void InitializeManagers()
+        {
+            _settingsManager = new CodeGeneratorSettingsManager();
+            _uiRenderer = new CodeGeneratorUIRenderer();
+            _preparationHelper = new CodeGeneratorPreparationHelper();
+            _ragProcessor = new RagProcessor();
+        }
+        
+        private async void ProcessAllFilesForRag()
+        {
+            string projectPath = Application.dataPath;
+            EditorUtility.DisplayProgressBar("Processing Files", "Starting...", 0f);
 
-                    if (_ignoredFolders.Any(ignoredFolder => kv.Value.Contains(ignoredFolder)))
-                        continue;
-
-                    filteredSuggestions.Add(kv.Key);
-                }
-                string[] suggestions = filteredSuggestions.OrderBy(c => c).ToArray();
-                if (suggestions.Length > 0)
-                {
-                    scrollPosition = EditorGUILayout.BeginScrollView(scrollPosition, GUILayout.Height(200));
-                    foreach (var suggestion in suggestions)
-                    {
-                        if (GUILayout.Button(suggestion))
-                        {
-                            if (!selectedClassNames.Contains(suggestion))
-                            {
-                                selectedClassNames.Add(suggestion);
-                            }
-                            classNameInput = "";
-                            GUI.FocusControl(null);
-                        }
-                    }
-                    EditorGUILayout.EndScrollView();
-                }
-            }
-            EditorGUILayout.Space();
-            if (selectedClassNames.Count > 0)
+            try
             {
-                if (GUILayout.Button("Clear all selected classes"))
-                {
-                    selectedClassNames.Clear();
-                }
-                GUILayout.Space(10);
+                await ragProcessor.ProcessAllFiles(projectPath);
+                EditorUtility.DisplayDialog("RAG Processing Complete", "All files have been processed for RAG.", "OK");
             }
-            if (selectedClassNames.Count > 4)
+            catch (Exception e)
             {
-                scrollPosition = EditorGUILayout.BeginScrollView(scrollPosition, GUILayout.Height(200));
+                Debug.LogError($"Error processing files for RAG: {e.Message}");
+                EditorUtility.DisplayDialog("Error", $"An error occurred while processing files for RAG: {e.Message}", "OK");
             }
-            for (int i = 0; i < selectedClassNames.Count; i++)
+            finally
             {
-                EditorGUILayout.BeginHorizontal();
-                if (GUILayout.Button("x", GUILayout.Width(40)))
-                {
-                    selectedClassNames.RemoveAt(i);
-                    i--;
-                    continue;
-                }
-                EditorGUILayout.LabelField(selectedClassNames[i]);
-                EditorGUILayout.EndHorizontal();
-            }
-            if (selectedClassNames.Count > 4)
-            {
-                EditorGUILayout.EndScrollView();
-            }
-            EditorGUILayout.Space();
-            EditorGUILayout.BeginHorizontal();
-            if (GUILayout.Button("Clear Prompt"))
-            {
-                generatedPrompt = "";
-            }
-            GUI.backgroundColor = buttonColor;
-            if (GUILayout.Button("Generate Prompt"))
-            {
-                ExecGeneratePrompt();
-            }
-
-            if (isGeneratingCode)
-            {
-                Rect progressRect = GUILayoutUtility.GetRect(100, 20);
-                EditorGUI.ProgressBar(progressRect, generationProgress, $"Generating... {generationProgress * 100:F0}%");
-            }
-            
-            if (GUILayout.Button("Generate Code"))
-            {
-                ExecGenerateCode();
-            }
-            
-            if (GUILayout.Button("Stop"))
-            {
-                isGeneratingCode = false;
-                EditorApplication.update -= UpdateProgressBar;
-            }
-
-            GUI.backgroundColor = Color.white;
-            EditorGUILayout.EndHorizontal();
-
-            bookmarkManager.DrawBookmarksUI(this);
-
-            if (!string.IsNullOrEmpty(generatedPrompt))
-            {
-                GUILayout.Label("Generated Prompt:", EditorStyles.boldLabel);
-                scrollPosition = GUILayout.BeginScrollView(scrollPosition, GUILayout.Height(Screen.height * 0.4f));
-                generatedPrompt = EditorGUILayout.TextArea(generatedPrompt, GUILayout.Height(20 * EditorGUIUtility.singleLineHeight));
-                GUILayout.EndScrollView();
-            }
-            if (isButtonAnimating)
-            {
-                Repaint();
+                EditorUtility.ClearProgressBar();
             }
         }
 
-        #region Generation
-        private void ExecGeneratePrompt()
+        #region Code Generation
+        public void ExecGeneratePrompt()
         {
-            Dictionary<string, string> projectCode = new Dictionary<string, string>();
-            foreach (string className in selectedClassNames)
-            {
-                if (classToPath.TryGetValue(className, out string filePath))
-                {
-                    projectCode[filePath] = File.ReadAllText(filePath);
-                }
-            }
-            
-            var includedFolders = IncludedFoldersManager.GetEnabledFolders();
-            foreach (var folder in includedFolders)
-            {
-                string[] files = Directory.GetFiles(folder, "*.cs", SearchOption.AllDirectories);
-                foreach (var file in files)
-                {
-                    projectCode[file] = File.ReadAllText(file);
-                }
-            }
-            
+            Dictionary<string, string> projectCode = _preparationHelper.PrepareProjectCode(selectedClassNames, classToPath, _ignoredFolders);
             SaveTaskToPrefs();
             GeneratePrompt(projectCode, 3);
             SavePromptToFile();
@@ -233,13 +144,15 @@ namespace Sanat.CodeGenerator
             StartButtonAnimation();
         }
 
-        private void SaveTaskToPrefs()
+        private void SaveTaskToPrefs() => PlayerPrefs.SetString(PREFS_KEY_TASK, taskInput);
+
+        public void ExecGenerateCode()
         {
-            PlayerPrefs.SetString(PREFS_KEY_TASK, taskInput);
-            PlayerPrefs.Save();
+            Dictionary<string, string> projectCode = _preparationHelper.PrepareProjectCode(selectedClassNames, classToPath, _ignoredFolders);
+            InitiateGeneration(projectCode);
         }
 
-        private void ExecGenerateCode()
+        private void InitiateGeneration(Dictionary<string, string> projectCode)
         {
             isGeneratingCode = true;
             _currentRun = 0;
@@ -247,56 +160,89 @@ namespace Sanat.CodeGenerator
             targetProgress = .33f;
             lastProgressUpdateTime = (float)EditorApplication.timeSinceStartup;
             EditorApplication.update += UpdateProgressBar;
-            Dictionary<string, string> projectCode = new Dictionary<string, string>();
-            foreach (string className in selectedClassNames)
-            {
-                if (classToPath.TryGetValue(className, out string filePath))
-                {
-                    projectCode[filePath] = File.ReadAllText(filePath);
-                }
-            }
             SaveTaskToPrefs();
             string[] projectCodePathes = projectCode.Keys.ToArray();
             GeneratePrompt(projectCode);
             SavePromptToFile();
             CopyPromptToClipboard();
             StartButtonAnimation();
-            var includedCode = GenerateIncludedCode(projectCode, "", ref generatedPrompt);
-            AbstractAgentHandler.ApiKeys apiKeys = new AbstractAgentHandler.ApiKeys(openaiApiKey, antrophicApiKey, groqApiKey, geminiApiKey);
-            AgentCodeStrategyArchitector agentCodeStrategyArchitector = new AgentCodeStrategyArchitector(apiKeys, taskInput, includedCode);
-            AbstractAgentHandler agentCodeArchitector = new AgentCodeArchitector(apiKeys, taskInput, includedCode);
-            AbstractAgentHandler agentSolutionToDicts = new AgentSolutionToDict(apiKeys, projectCodePathes);
-            AbstractAgentHandler agentCodeMerger = new AgentCodeMerger(apiKeys, projectCode);
-            
-            // agentCodeStrategyArchitector.OnComplete += (string result) =>
-            // {
-            //     Debug.Log($"{agentCodeStrategyArchitector.Name} OnComplete: {result.Substring(0,500)}");
-            //     //agentCodeArchitector.Handle(result);
-            // };
-            // agentCodeStrategyArchitector.Handle("");
-            // return;
-            agentCodeMerger.OnComplete += (string result) => { FinishGenerationActions(); };
-            
-            agentCodeArchitector.OnComplete += (string result) =>
+            var includedCode = _preparationHelper.GenerateIncludedCode(projectCode, "");
+            InitiateCodeGeneration(projectCodePathes, includedCode);
+        }
+
+        private void InitiateCodeGeneration(string[] projectCodePaths, string includedCode)
+        {
+            var apiKeys = new AbstractAgentHandler.ApiKeys(openaiApiKey, antrophicApiKey, groqApiKey, geminiApiKey);
+    
+            // Initialize agents with appropriate settings
+            var agentCodeArchitector = new AgentCodeArchitector(apiKeys, taskInput, includedCode);
+            var architectorSettings = agentModelSettings["AgentCodeArchitector"];
+            agentCodeArchitector.ChangeLLM(architectorSettings.ApiProvider, architectorSettings.ModelName);
+    
+            // Convert paths to dictionary for project code
+            Dictionary<string, string> projectCode = new Dictionary<string, string>();
+            foreach(var path in projectCodePaths)
             {
-                Debug.Log($"{agentCodeArchitector.Name} OnComplete: {result.Substring(0,500)}");
-                agentCodeArchitector.SaveResultToFile(result);
-                AgentCodeValidator agentValidator = new AgentCodeValidator(apiKeys, taskInput, includedCode, result);
-                agentValidator.OnComplete += (string validationResult) =>
+                if(File.Exists(path))
                 {
-                    //Debug.Log($"{agentValidator.Name} OnComplete: {validationResult}");
-                    NextStepsAfterArchitector(validationResult, agentCodeMerger, 
-                        apiKeys, result, agentSolutionToDicts, 
-                        agentCodeArchitector as AgentCodeArchitector, includedCode);
-                };
-                if (isGeneratingCode)
-                {
-                    agentValidator.Handle(result);
-                    UpdateProgress(0.33f); 
+                    projectCode[path] = File.ReadAllText(path);
                 }
-            };
+            }
+    
+            var agentSolutionToDicts = new AgentSolutionToDict(apiKeys, projectCodePaths);
+            var agentCodeMerger = new AgentCodeMerger(apiKeys, projectCode); // Using the correct constructor
+
+            // Set up callbacks and chain
+            SetupArchitectorCallbacks(agentCodeArchitector, agentCodeMerger, apiKeys, agentSolutionToDicts, includedCode);
+    
+            // Start the generation process with initial prompt
             agentCodeArchitector.SetNext(null);
             agentCodeArchitector.Handle(generatedPrompt);
+        }
+        #endregion
+
+        private void SetupArchitectorCallbacks(
+            AgentCodeArchitector agentCodeArchitector,
+            AgentCodeMerger agentCodeMerger, 
+            AbstractAgentHandler.ApiKeys apiKeys,
+            AbstractAgentHandler agentSolutionToDicts,
+            string includedCode)
+        {
+            // Configure architect's completion handling
+            agentCodeArchitector.OnComplete += (string result) =>
+            {
+                // Create validator to check architect's output
+                AgentCodeValidator agentValidator = new AgentCodeValidator(apiKeys, taskInput, includedCode, result);
+                
+                agentValidator.OnComplete += (string validationResult) =>
+                {
+                    NextStepsAfterArchitector(validationResult, agentCodeMerger, apiKeys, result, 
+                        agentSolutionToDicts, agentCodeArchitector, includedCode);
+                };
+
+                // Start validation
+                agentValidator.Handle(result);
+            };
+
+            // Configure merger completion to finish the process
+            agentCodeMerger.OnComplete += (string mergedCode) => 
+            { 
+                Debug.Log($"Code generation completed. Result: {mergedCode}");
+                FinishGenerationActions();
+            };
+
+            // Handle potential failures 
+            agentCodeArchitector.OnUnsuccessfull += () =>
+            {
+                Debug.LogError("Code architect failed to generate solution");
+                FinishGenerationActions();
+            };
+            
+            agentCodeMerger.OnUnsuccessfull += () => 
+            {
+                Debug.LogError("Code merger failed to process solution");
+                FinishGenerationActions(); 
+            };
         }
 
         private AbstractAgentHandler NextStepsAfterArchitector(string validationResult,
@@ -327,12 +273,12 @@ namespace Sanat.CodeGenerator
                 else
                 {
                     Debug.Log($"<color=red>Validation failed.</color> Returning to Architector. validationResult: {validationResult}");
-                    if (_currentRun == 1)
+                    if (_currentRun == 2)
                     {
                         UpdateProgress(0.4f);
                         Debug.Log($"Current run: {_currentRun}; model: {Model.GPT4o_16K.Name}");
-                        agentCodeArchitector.ChangeLLM(AbstractAgentHandler.ApiProviders.OpenAI, Model.GPT4o_16K);
-                    }else if (_currentRun == 2)
+                        agentCodeArchitector.ChangeLLM(AbstractAgentHandler.ApiProviders.OpenAI, Model.GPT4o_16K.Name);
+                    }else if (_currentRun == 3)
                     {
                         UpdateProgress(0.6f); 
                         Debug.Log($"Current run: {_currentRun}; model: {ApiGeminiModels.Pro}");
@@ -341,7 +287,7 @@ namespace Sanat.CodeGenerator
                     {
                         UpdateProgress(0.8f); 
                         Debug.Log($"Current run: {_currentRun}; model: {Model.GPT4o1mini.Name}");
-                        agentCodeArchitector.ChangeLLM(AbstractAgentHandler.ApiProviders.OpenAI, Model.GPT4o1mini);
+                        agentCodeArchitector.ChangeLLM(AbstractAgentHandler.ApiProviders.OpenAI, Model.GPT4o1mini.Name);
                     }
                     agentCodeArchitector.WorkWithFeedback(validationResult, result, (string feedbackResult) =>
                     {
@@ -351,7 +297,7 @@ namespace Sanat.CodeGenerator
                         {
                             Debug.Log($"{agentValidator.Name} OnComplete: {validationResult}");
                             NextStepsAfterArchitector(validationResult, agentCodeMerger, 
-                                apiKeys, result, agentSolutionToDicts, 
+                                apiKeys, feedbackResult, agentSolutionToDicts, 
                                 agentCodeArchitector, includedCode);
                         };
                         agentValidator.Handle(feedbackResult);
@@ -413,8 +359,6 @@ namespace Sanat.CodeGenerator
             return includedCodeRaw;
         }
 
-        #endregion
-
         #region Progress Bar
         private void UpdateProgress(float progress)
         {
@@ -427,7 +371,7 @@ namespace Sanat.CodeGenerator
             }
         }
 
-        private void UpdateProgressBar()
+        public void UpdateProgressBar()
         {
             float currentTime = (float)EditorApplication.timeSinceStartup;
             if (currentTime - lastProgressUpdateTime >= 0.02f)
@@ -444,7 +388,7 @@ namespace Sanat.CodeGenerator
         #endregion
 
         #region Settings
-        private void DrawSettingsFields()
+        public void DrawSettingsFields()
         {
             EditorGUILayout.BeginVertical(EditorStyles.helpBox);
             EditorGUILayout.LabelField("Settings", EditorStyles.boldLabel);
@@ -459,6 +403,27 @@ namespace Sanat.CodeGenerator
             EditorGUILayout.EndHorizontal();
             EditorGUILayout.BeginHorizontal();
             InsertApiKeyRow("Antrophic API Key", "AntrophicApiKey", "https://console.anthropic.com/settings/keys", ref antrophicApiKey);
+            EditorGUILayout.EndHorizontal();
+            EditorGUILayout.BeginHorizontal();
+            InsertApiKeyRow("Supabase URL", "SupabaseUrl", "https://supabase.com/dashboard/projects/", ref supabaseUrl);
+            EditorGUILayout.EndHorizontal();
+            EditorGUILayout.BeginHorizontal();
+            InsertApiKeyRow("Supabase Key", "SupabaseKey", "https://supabase.com/dashboard/projects/", ref supabaseKey);
+            EditorGUILayout.EndHorizontal();
+            EditorGUILayout.BeginHorizontal();
+            //is rag field
+            EditorGUILayout.LabelField("Is RAG", GUILayout.Width(150));
+            isRag = EditorGUILayout.Toggle(isRag);
+            EditorGUILayout.EndHorizontal();
+            EditorGUILayout.BeginHorizontal();
+            InsertApiKeyRow("Table Name", "TableName", "https://supabase.com/dashboard/projects/", ref tableName);
+            EditorGUILayout.EndHorizontal();
+            
+            EditorGUILayout.BeginHorizontal();
+            if (GUILayout.Button("Process All Files for RAG"))
+            {
+                ProcessAllFilesForRag();
+            }
             EditorGUILayout.EndHorizontal();
             EditorGUILayout.Space();
             EditorGUILayout.LabelField("Ignored Folders:", EditorStyles.boldLabel);
@@ -482,6 +447,8 @@ namespace Sanat.CodeGenerator
             GeminiProjectName = EditorGUILayout.TextField(GeminiProjectName);
             PlayerPrefs.SetString("GeminiProjectName", GeminiProjectName);
             EditorGUILayout.EndHorizontal();
+            
+            
             EditorGUILayout.Space();
             IncludedFoldersManager.DrawIncludedFoldersUI();
             EditorGUILayout.EndVertical();
@@ -500,7 +467,7 @@ namespace Sanat.CodeGenerator
             }
         }
 
-        private void RefreshClassList()
+        public void RefreshClassList()
         {
             Debug.Log($"{PLUGIN_NAME}Refreshing class list...");
             classToPath.Clear();
@@ -563,45 +530,8 @@ namespace Sanat.CodeGenerator
             }
         }
 
-        private void OnEnable()
-        {
-            selectedClassNames = new List<string>(PlayerPrefs.GetString("SelectedClassNames", "").Split(',').Where(s => !string.IsNullOrEmpty(s)));
-            geminiApiKey = PlayerPrefs.GetString("GeminiApiKey", "");
-            openaiApiKey = PlayerPrefs.GetString("OpenaiApiKey", "");
-            groqApiKey = PlayerPrefs.GetString("GroqApiKey", "");
-            antrophicApiKey = PlayerPrefs.GetString("AntrophicApiKey", "");
-            GeminiProjectName = PlayerPrefs.GetString(PREFS_GEMINI_PROJECT_NAME, "");
-            _ignoredFolders = PlayerPrefs.GetString("IgnoredFolders", "").Split(',').Where(s => !string.IsNullOrEmpty(s)).ToList();
-            includedFolders = JsonUtility.FromJson<List<IncludedFolder>>(PlayerPrefs.GetString(INCLUDED_FOLDERS_PREFS_KEY, "[]"));
-            taskInput = PlayerPrefs.GetString(PREFS_KEY_TASK, "");
-            isGeneratingCode = false;
-            
-            IncludedFoldersManager = new IncludedFoldersManager();
-            RefreshClassList();
-            CheckAndHandleFirstLaunch();
-            bookmarkManager = new CodeGeneratorBookmarks();
-            bookmarkManager.OnBookmarkLoaded += LoadBookmarkData;
-            bookmarkManager.LoadBookmarksFromPrefs();
-            var bookmarks = bookmarkManager.GetBookmarks();
-            bookmarkManager.InitializeReorderableList();
-        }
-
-        private void OnDisable()
-        {
-            PlayerPrefs.SetString("SelectedClassNames", string.Join(",", selectedClassNames));
-            PlayerPrefs.SetString("GeminiApiKey", geminiApiKey);
-            PlayerPrefs.SetString("OpenaiApiKey", openaiApiKey);
-            PlayerPrefs.SetString("GroqApiKey", groqApiKey);
-            PlayerPrefs.SetString("AntrophicApiKey", antrophicApiKey);
-            PlayerPrefs.SetString("GeminiProjectName", GeminiProjectName);
-            PlayerPrefs.SetString("IgnoredFolders", string.Join(",", _ignoredFolders));
-            PlayerPrefs.SetString(INCLUDED_FOLDERS_PREFS_KEY, JsonUtility.ToJson(includedFolders));
-            bookmarkManager.SaveBookmarksToPrefs();
-            PlayerPrefs.Save();
-            bookmarkManager.OnBookmarkLoaded -= LoadBookmarkData;
-        }
         
-        private void LoadBookmarkData(CodeGeneratorBookmarks.Bookmark bookmark)
+        public void LoadBookmarkData(CodeGeneratorBookmarks.Bookmark bookmark)
         {
             var bookmarks = bookmarkManager.LoadBookmarksFromPrefs();
             foreach (var bkm in bookmarks)
@@ -616,7 +546,7 @@ namespace Sanat.CodeGenerator
             }
         }
 
-        private void CheckAndHandleFirstLaunch()
+        public void CheckAndHandleFirstLaunch()
         {
             if (!IsFirstLaunch())
             {
@@ -671,5 +601,4 @@ namespace Sanat.CodeGenerator
             return isFirstLaunch;
         }
     }
-    
 }

@@ -32,9 +32,11 @@ namespace Sanat.CodeGenerator.Agents
         public enum Brackets { round, square, curly, angle }
         protected bool _isModelChanged;
         protected bool _isChangedModelOpenai;
-        protected Model _newOpenaiModel;
+        protected Sanat.ApiOpenAI.Model _newOpenaiModel;
         protected bool _isChangedModelGemini;
+        protected bool _isChangedModelAnthropic;
         protected string _newGeminiModel;
+        protected string _modelName;
 
         public void SaveResultToFile(string result)
         {
@@ -66,7 +68,7 @@ namespace Sanat.CodeGenerator.Agents
         
         public void StoreKeys(ApiKeys keys) => Apikeys = keys;
 
-        protected virtual Model GetModel() => Model.GPT4omini;
+        protected virtual Sanat.ApiOpenAI.Model GetModel() => Sanat.ApiOpenAI.Model.GPT4omini;
         
         protected virtual string GetGeminiModel() => ApiGeminiModels.Flash;
         
@@ -113,16 +115,19 @@ namespace Sanat.CodeGenerator.Agents
         {
             public string prompt;
             public ApiProviders apiProvider;
+            public string modelName;
             public float temp;
             public Action<string> onComplete;
             public ToolRequest geminiToolRequest;
+            public Sanat.ApiAnthropic.Model antrophicModel;
             
-            public BotParameters(string prompt, ApiProviders apiProvider, float temp, Action<string> onComplete)
+            public BotParameters(string prompt, ApiProviders apiProvider, float temp, Action<string> onComplete, string modelName = null)
             {
                 this.prompt = prompt;
                 this.apiProvider = apiProvider;
                 this.temp = temp;
                 this.onComplete = onComplete;
+                this.modelName = modelName;
             }
         }
         
@@ -133,7 +138,8 @@ namespace Sanat.CodeGenerator.Agents
                     AskChatGpt(botParameters.prompt, botParameters.temp, botParameters.onComplete);
                     break;
                 case ApiProviders.Anthropic:
-                    AskAntrophic(botParameters.prompt, botParameters.temp, botParameters.onComplete);
+                    ApiAnthropic.Model model = ApiAnthropic.Model.GetModelByName(_modelName);
+                    AskAntrophic(model, botParameters.prompt, botParameters.temp, botParameters.onComplete);
                     break;
                 case ApiProviders.Groq:
                     AskGroq(botParameters.prompt, botParameters.temp, botParameters.onComplete);
@@ -147,7 +153,7 @@ namespace Sanat.CodeGenerator.Agents
         public void AskChatGpt(string prompt, float temp, Action<string> onComplete) {
             List<ApiOpenAI.ChatMessage> messages = new List<ApiOpenAI.ChatMessage>();
             messages.Add(new ApiOpenAI.ChatMessage("user", prompt));
-            var model = GetModel();
+            var model = ApiOpenAI.Model.GetModelByName(_modelName);
             
             UnityWebRequestAsyncOperation request = OpenAI.SubmitChatAsync(
                 Apikeys.openAI,
@@ -159,15 +165,15 @@ namespace Sanat.CodeGenerator.Agents
             );
         }
         
-        public void AskAntrophic(string prompt, float temp, Action<string> onComplete) {
+        public void AskAntrophic(Sanat.ApiAnthropic.Model model, string prompt, float temp, Action<string> onComplete) {
             List<ApiAnthropic.ChatMessage> messages = new List<ApiAnthropic.ChatMessage>();
             messages.Add(new ApiAnthropic.ChatMessage("user", prompt));
 
             UnityWebRequestAsyncOperation request = Anthropic.SubmitChatAsync(
                 Apikeys.antrophic,
-                ApiAnthropicModels.Claude35latest,
+                model,
                 temp,
-                8192,
+                model.MaxOutputTokens,
                 messages,
                 onComplete
             );

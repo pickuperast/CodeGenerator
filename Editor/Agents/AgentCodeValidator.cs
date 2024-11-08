@@ -24,7 +24,7 @@ namespace Sanat.CodeGenerator.Agents
                       $"# TASK: {task}. " +
                       $"# CODE: {includedCode} " +
                       $"# POSSIBLE ANSWER: {possibleAnswer}";
-            SelectedApiProvider = ApiProviders.Anthropic;
+            SelectedApiProvider = ApiProviders.OpenAI;
         }
         
         protected override string GetGeminiModel() => ApiGeminiModels.Pro;

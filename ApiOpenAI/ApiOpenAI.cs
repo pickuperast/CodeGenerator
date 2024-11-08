@@ -310,6 +310,40 @@ namespace Sanat.ApiOpenAI
         }
 
         #endregion
+
+        #region Embeddings Generation
+
+        public static UnityWebRequestAsyncOperation SubmitEmbeddingAsync(string apiKey, string input, string model, Action<List<float>> callback)
+        {
+            var embeddingRequest = new EmbeddingRequest(input, model);
+            string jsonData = JsonUtility.ToJson(embeddingRequest);
+
+            UnityWebRequest webRequest = CreateWebRequest(apiKey, $"{BaseURL}embeddings", jsonData);
+
+            UnityWebRequestAsyncOperation asyncOp = webRequest.SendWebRequest();
+
+            asyncOp.completed += (op) =>
+            {
+                var success = webRequest.result == UnityWebRequest.Result.Success;
+                var text = success ? webRequest.downloadHandler.text : string.Empty;
+                if (!success) Debug.Log($"{webRequest.error}\n{webRequest.downloadHandler.text}");
+                webRequest.Dispose();
+                webRequest = null;
+
+                List<float> embedding = null;
+
+                if (!string.IsNullOrEmpty(text))
+                {
+                    var responseData = JsonUtility.FromJson<EmbeddingResponse>(text);
+                    embedding = responseData.data[0].embedding;
+                }
+                callback?.Invoke(embedding);
+            };
+
+            return asyncOp;
+        }
+
+        #endregion
         
         public static UnityWebRequest CreateWebRequest(string apiKey, string url, string jsonData)
         {
