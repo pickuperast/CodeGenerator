@@ -48,10 +48,9 @@
 
 ## Installation
 
-1. Install this package: https://github.com/TaprobanaStudios/OpenAI-Unity
-2. Download and import the Code Generator package into your Unity project.
-3. Ensure you have access to the required AI APIs (Gemini, OpenAI, Groq, Anthropic).
-4. Configure your API keys in the settings section of the Code Generator window.
+1. Download and import the Code Generator package into your Unity project.
+2. Ensure you have access to the required AI APIs (Gemini, OpenAI, Groq, Anthropic).
+3. Configure your API keys in the settings section of the Code Generator window.
 
 ## Requirements
 
