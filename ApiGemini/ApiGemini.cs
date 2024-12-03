@@ -14,7 +14,7 @@ namespace Sanat.ApiGemini
         public static string TextToSpeechURL = "https://texttospeech.googleapis.com/v1/text:synthesize";
         public static string GetGeminiProjectName()
         {
-            return PlayerPrefs.GetString(PREFS_GEMINI_PROJECT_NAME, "");
+            return UnityEditor.EditorPrefs.GetString(PREFS_GEMINI_PROJECT_NAME, "");
         }
 
         public static UnityWebRequestAsyncOperation SubmitChatAsync(
@@ -35,7 +35,11 @@ namespace Sanat.ApiGemini
             {
                 var success = webRequest.result == UnityWebRequest.Result.Success;
                 var text = success ? webRequest.downloadHandler.text : string.Empty;
-                if (!success) Debug.Log($"{webRequest.error} {apiKey}\n{webRequest.downloadHandler.text}");
+                if (!success)
+                {
+                    Debug.Log($"{webRequest.error} {apiKey}\n{webRequest.downloadHandler.text}");
+                    callback?.Invoke($"{webRequest.error}");
+                }
                 webRequest.Dispose();
 
                 if (!string.IsNullOrEmpty(text))

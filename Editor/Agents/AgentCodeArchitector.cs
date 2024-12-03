@@ -50,10 +50,15 @@ namespace Sanat.CodeGenerator.Agents
 
         public override void Handle(string input)
         {
-            Debug.Log($"<color=purple>{Name}</color> asking: {_prompt}");
+            Debug.Log($"<color=green>{Name}</color> asking: {_prompt}");
             BotParameters botParameters = new BotParameters(_prompt, SelectedApiProvider, Temperature, delegate(string result)
             {
                 Debug.Log($"<color=purple>{Name}</color> result: {result}");
+                if (result.Contains("HTTP/1.1 404"))
+                {
+                    Debug.LogError($"<color=purple>{Name}</color>: Stop");
+                    return;
+                }
                 OnComplete?.Invoke(result);
                 SaveResultToFile(result);
             }, _modelName);

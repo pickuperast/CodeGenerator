@@ -1,9 +1,8 @@
+using System;
 using UnityEngine;
 using UnityEditor;
 using System.Collections.Generic;
-using System.Linq;
 using UnityEditorInternal;
-using UnityEngine.Serialization;
 
 namespace Sanat.CodeGenerator.Bookmarks
 {
@@ -14,9 +13,10 @@ namespace Sanat.CodeGenerator.Bookmarks
         private string bookmarkSearchQuery = "";
         private Vector2 bookmarkScrollPosition;
         private bool showBookmarks = false;
-        private ReorderableList bookmarkList;
+        private ReorderableList bookmarkList = new ReorderableList(new List<Bookmark>(), typeof(Bookmark), true, true, false, false);
         private Texture2D bookmarkIcon;
         CodeGenerator codeGenerator;
+        public event Action OnBookmarkSaved;
 
         public event System.Action<Bookmark> OnBookmarkLoaded;
         
@@ -158,13 +158,12 @@ namespace Sanat.CodeGenerator.Bookmarks
         public void SaveBookmarksToPrefs()
         {
             string json = JsonUtility.ToJson(new SerializableBookmarkList { bookmarks = bookmarks });
-            PlayerPrefs.SetString("CodeGeneratorBookmarks", json);
-            PlayerPrefs.Save();
+            EditorPrefs.SetString("CodeGeneratorBookmarks", json);
         }
 
         public List<Bookmark> LoadBookmarksFromPrefs()
         {
-            string json = PlayerPrefs.GetString("CodeGeneratorBookmarks", "");
+            string json = EditorPrefs.GetString("CodeGeneratorBookmarks", "");
             if (!string.IsNullOrEmpty(json))
             {
                 SerializableBookmarkList loadedBookmarks = JsonUtility.FromJson<SerializableBookmarkList>(json);

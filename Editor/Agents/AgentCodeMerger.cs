@@ -8,14 +8,15 @@ using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 using Sanat.ApiGemini;
+using Sanat.ApiGroq;
 using Sanat.ApiOpenAI;
 
 namespace Sanat.CodeGenerator.Agents
 {
 	public class AgentCodeMerger : AbstractAgentHandler
 	{
-		private Dictionary<string, string> _projectCode = new ();
-		private const string PROMPT_FILE_PATH_EXTRACT = "PromptAgentCodeMergerFilePathExtract.md";
+		protected Dictionary<string, string> _projectCode = new ();
+		protected const string PROMPT_FILE_PATH_EXTRACT = "PromptAgentCodeMergerFilePathExtract.md";
 		
 		protected override string PromptFilename() => "AgentCodeMerger.md";
 		
@@ -50,7 +51,14 @@ namespace Sanat.CodeGenerator.Agents
 		{
 			GetFilePath(solutionInput, (result) =>
 			{
-				Debug.Log($"<color=cyan>{Name}</color> GetFilePath Result: {result}");
+				FileContent newQuestData = JsonUtility.FromJson<FileContent>(result);
+				string[] filePathes = newQuestData.FilePath.Split(CSV_SEPARATOR);
+				string[] fileContents = newQuestData.Content.Split(CSV_SEPARATOR);
+				for (int i = 0; i < filePathes.Length; i++)
+				{
+					Debug.Log($"<color=cyan>{Name}</color> GetFilePath Result: {filePathes[i]}");
+				}
+				
 				var splitted = result.Split(";");
 				//var filePathesCleared = LeaveOnlyCsFiles(splitted);
 				if (splitted.Length == 1)
@@ -67,7 +75,7 @@ namespace Sanat.CodeGenerator.Agents
 			});
 		}
 
-		private List<string> LeaveOnlyCsFiles(string[] splitted)
+		protected List<string> LeaveOnlyCsFiles(string[] splitted)
 		{
 			List<string> cleared = new List<string>();
 			for (int i = 0; i < splitted.Length; i++)
@@ -81,7 +89,7 @@ namespace Sanat.CodeGenerator.Agents
 			return cleared;
 		}
 
-		private void ExtractCodeContents(string solutionInput, string filePath)
+		protected void ExtractCodeContents(string solutionInput, string filePath)
 		{
 			Debug.Log($"<color=cyan>{Name}</color> ExtractCodeContents for path: {filePath}");
 			AgentExtractCodeByFilepath agentExtractCodeByFilepath = new AgentExtractCodeByFilepath(Apikeys, filePath);
@@ -93,7 +101,7 @@ namespace Sanat.CodeGenerator.Agents
 			});
 		}
 
-		private void ExtractCodeContentsOLD(string solutionInput, string[] splitted)
+		protected void ExtractCodeContentsOLD(string solutionInput, string[] splitted)
 		{
 			AgentSolutionToDict agentSolutionToDict = new AgentSolutionToDict(Apikeys, splitted);
 			agentSolutionToDict.SplitToFilePathContent(solutionInput, (result) =>
@@ -117,12 +125,31 @@ namespace Sanat.CodeGenerator.Agents
 			});
 		}
 
-		private void GetFilePath(string solutionInput, Action<string> callback)
+		protected void GetFilePath(string solutionInput, Action<string> callback)
 		{
 			string promptLocation = Application.dataPath + $"{PROMPTS_FOLDER_PATH}{PROMPT_FILE_PATH_EXTRACT}";
-			string prompt = LoadPrompt(promptLocation);
-			string question = prompt + solutionInput;
-			BotParameters botParameters = new BotParameters(question, ApiProviders.OpenAI, .0f, callback);
+			string question = solutionInput;
+			_modelName = Model.GPT4omini.Name;//ApiGroqModels.Llama3_70b_8192_tool.Name;
+			BotParameters botParameters = new BotParameters(question, ApiProviders.OpenAI, .2f, callback, _modelName, true);
+			var openaiTools = new OpenAI.Tool[] { new ("function", GetFunctionData_OpenaiSplitCodeToFilePathes()) };
+			botParameters.isToolUse = true;
+			botParameters.openaiTools = openaiTools;
+			botParameters.systemMessage = LoadPrompt(promptLocation);
+			botParameters.onOpenaiChatResponseComplete += (response) =>
+			{
+				Debug.Log($"<color=cyan>{Name}</color> GetFilePath Result: {response}");
+				if (response.choices[0].finish_reason == "tool_calls")
+				{
+					OpenAI.ToolCalls[] toolCalls = response.choices[0].message.tool_calls;
+					for (int i = 0; i < toolCalls.Length; i++)
+					{
+						Debug.Log($"<color=cyan>{Name}</color> function name: {toolCalls[i].function.name}");
+						Debug.Log($"<color=cyan>{Name}</color> function args: {toolCalls[i].function.arguments}");
+						FileContent newQuestData = JsonConvert.DeserializeObject<FileContent>(toolCalls[i].function.arguments);
+						DirectInsertion(newQuestData.FilePath, newQuestData.Content);
+					}
+				}
+			};
 			AskBot(botParameters);
 		}
 
@@ -181,7 +208,7 @@ namespace Sanat.CodeGenerator.Agents
 			}
 		}
 
-		private List<FileContent> ExtractFileContents(string clearedJson)
+		protected List<FileContent> ExtractFileContents(string clearedJson)
 		{
 			List<FileContent> codeSnippets;
 			string convertedJson = TranslateToValidJson(clearedJson);
@@ -190,14 +217,14 @@ namespace Sanat.CodeGenerator.Agents
 			return codeSnippets;
 		}
 
-		private string TranslateToValidJson(string clearedJson)
+		protected string TranslateToValidJson(string clearedJson)
 		{
 			string convertedJson = clearedJson.Replace("({", KEY_FIGURE_OPEN);
 			convertedJson = convertedJson.Replace("(}", KEY_FIGURE_CLOSE);
 			return convertedJson;
 		}
 		
-		private string TranslateFromValidJson(string clearedJson)
+		protected string TranslateFromValidJson(string clearedJson)
 		{
 			string convertedJson = clearedJson.Replace(KEY_FIGURE_OPEN, "({");
 			convertedJson = convertedJson.Replace(KEY_FIGURE_CLOSE, "(}");
@@ -228,6 +255,7 @@ namespace Sanat.CodeGenerator.Agents
 		{
 			SaveResultToFile(code);
 			filePath = filePath.Replace(":", string.Empty);
+			CompareAndFixFilePath(ref filePath);
 			
 			var match = Regex.Match(code, @"```csharp\s*([\s\S]*?)```");
 			if (match.Success)
@@ -276,7 +304,25 @@ namespace Sanat.CodeGenerator.Agents
 			Debug.Log($"<color=cyan>{Name}</color> <color=green>COMPLETED!</color> [{filePath}] Direct insertion:\n{code}");
 		}
 
-		private void MergeCode(string filePath, string solutionInput)
+		private void CompareAndFixFilePath(ref string filePath)
+		{
+			var filename = Regex.Match(filePath, @"([^\\\/]+\.cs)");
+			// try to find that filename in the project code
+			if (filename.Success)
+			{
+				string filenameToFind = filename.Groups[1].Value;
+				foreach (var projectFilePath in _projectCode.Keys)
+				{
+					if (projectFilePath.EndsWith(filenameToFind))
+					{
+						filePath = projectFilePath;
+						break;
+					}
+				}
+			}
+		}
+
+		protected void MergeCode(string filePath, string solutionInput)
 		{
 			ParsedCodeData bakedCode = new ParsedCodeData();
 			if (_projectCode.ContainsKey(filePath))
@@ -306,7 +352,7 @@ namespace Sanat.CodeGenerator.Agents
 			});
 		}
 		
-		private string MergeCodeParts(ParsedCodeData oldCode, ParsedCodeData newCode)
+		protected string MergeCodeParts(ParsedCodeData oldCode, ParsedCodeData newCode)
 		{
 			StringBuilder mergedCode = new StringBuilder();
 			
@@ -350,7 +396,7 @@ namespace Sanat.CodeGenerator.Agents
 			return mergedCode.ToString();
 		}
 
-		private void AddOldMethodsNotInNewCode(ParsedCodeData oldCode, StringBuilder mergedCode)
+		protected void AddOldMethodsNotInNewCode(ParsedCodeData oldCode, StringBuilder mergedCode)
 		{
 			foreach (var method in oldCode.Methods)
 			{
@@ -359,7 +405,7 @@ namespace Sanat.CodeGenerator.Agents
 			}
 		}
 
-		private static void UpdateOldCodeMethodsFromNewCode(ParsedCodeData oldCode, Dictionary<string, string> parsedMethods, StringBuilder mergedCode)
+		protected static void UpdateOldCodeMethodsFromNewCode(ParsedCodeData oldCode, Dictionary<string, string> parsedMethods, StringBuilder mergedCode)
 		{
 			List<MethodData> updatedMethods = new List<MethodData>(oldCode.Methods);
 			foreach (var method in updatedMethods)
@@ -384,12 +430,28 @@ namespace Sanat.CodeGenerator.Agents
 			}
 		}
 
-		private static void AddMethodToMergedCode(StringBuilder mergedCode, string updatedMethodBody)
+		protected OpenAI.ToolFunction GetFunctionData_OpenaiSplitCodeToFilePathes()
+		{
+			string description = "Inserts code into the file.";
+			string name = "InsertCodeToPath";
+			string propertyFilePathes = "FilePath";
+			string propertyFileContents = "Content";
+
+			OpenAI.Parameter parameters = new ();
+			parameters.AddProperty(propertyFilePathes, OpenAI.DataTypes.STRING, $"AI must tell filepath of the code snippet");
+			parameters.AddProperty(propertyFileContents, OpenAI.DataTypes.STRING, $"AI must provide FULL code snippet for selected filepath");
+			parameters.Required.Add(propertyFilePathes);
+			parameters.Required.Add(propertyFileContents);
+			OpenAI.ToolFunction function = new OpenAI.ToolFunction(name, description, parameters);
+			return function;
+		}
+
+		protected static void AddMethodToMergedCode(StringBuilder mergedCode, string updatedMethodBody)
 		{
 			mergedCode.AppendLine($"\r{updatedMethodBody}");
 		}
 
-		private string MergeRows(string rowsA, string rowsB)
+		protected string MergeRows(string rowsA, string rowsB)
 		{
 			if (rowsB == null || rowsB.Length == 0)
 			{
@@ -404,7 +466,7 @@ namespace Sanat.CodeGenerator.Agents
 			return mergedRows;
 		}
 
-		private ParsedCodeData ToCustomJson(string filePath, string codeRaw)
+		protected ParsedCodeData ToCustomJson(string filePath, string codeRaw)
 		{
 			string libraries = ParseLibraries(codeRaw);
 			string nameSpace = ParseNamespace(codeRaw);
@@ -423,7 +485,7 @@ namespace Sanat.CodeGenerator.Agents
 			};
 		}
 
-		private string ParseNamespace(string codeRaw)
+		protected string ParseNamespace(string codeRaw)
 		{
 			string pattern = @"namespace\s+([\w.]+)\s*\{";
 			Match match = Regex.Match(codeRaw, pattern);
@@ -437,7 +499,7 @@ namespace Sanat.CodeGenerator.Agents
 		}
 
 		#region Parsers
-		private string ParseClassName(string codeRaw)
+		protected string ParseClassName(string codeRaw)
 		{
 			string pattern = @"(?:public|private|protected|internal)?\s*(sealed|abstract|static)?\s*class\s+(\w+)\s*(:\s*[\w,\s<>]+)?";
 			Match match = Regex.Match(codeRaw, pattern);
@@ -455,7 +517,7 @@ namespace Sanat.CodeGenerator.Agents
 			return string.Empty;
 		}
 
-		private List<MethodData> ParseMethods(string codeRaw)
+		protected List<MethodData> ParseMethods(string codeRaw)
 		{
 			List<MethodData> methods = new List<MethodData>();
 			string pattern = @"(?:public|private|protected|internal|static)?\s+(?:void|[\w<>[\]]+)\s+(\w+)\s*\([^)]*\)\s*(?:where\s+[^{]+)?\s*\{(?:[^{}]|\{(?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*\})*\}";
@@ -472,7 +534,7 @@ namespace Sanat.CodeGenerator.Agents
 			return methods;
 		}
 
-		private string ParseFields(string codeRaw)
+		protected string ParseFields(string codeRaw)
 		{
 			List<string> fields = new List<string>();
 			string pattern = @"(?:public|private|protected|internal|static)?\s+(?:readonly\s+)?(?!using|return|class|void|enum)[\w<>[\]]+\s+\w+(?:\s*=\s*(?![^;]*\()[^;]+)?;";
@@ -487,7 +549,7 @@ namespace Sanat.CodeGenerator.Agents
 			return string.Join("\n", fields);
 		}
 
-		private string ParseLibraries(string codeRaw)
+		protected string ParseLibraries(string codeRaw)
 		{
 			List<string> libraries = new List<string>();
 			string pattern = @"using\s+[\w.]+;";
@@ -503,6 +565,7 @@ namespace Sanat.CodeGenerator.Agents
 		}
 		#endregion
 		
+		[Serializable]
 		public class ParsedCodeData
 		{
 			public string Namespace { get; set; }
@@ -513,12 +576,14 @@ namespace Sanat.CodeGenerator.Agents
 			public List<MethodData> Methods { get; set; }
 		}
 		
+		[Serializable]
 		public class MethodData
 		{
 			public string MethodName { get; set; }
 			public string MethodBody { get; set; }
 		}
 		
+		[Serializable]
 		public class FileContent
 		{
 			public string FilePath { get; set; }

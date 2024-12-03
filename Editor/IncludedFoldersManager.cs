@@ -53,19 +53,16 @@ namespace Sanat.CodeGenerator
 
         private void LoadIncludedFolders()
         {
-            string json = PlayerPrefs.GetString(INCLUDED_FOLDERS_PREFS_KEY, "[]");
-            
+            string json = EditorPrefs.GetString(INCLUDED_FOLDERS_PREFS_KEY, "[]");
             IncludedFoldersList list = JsonUtility.FromJson<IncludedFoldersList>(json);
             includedFolders = list?.folders ?? new List<IncludedFolder>();
-            
         }
 
         private void SaveIncludedFolders()
         {
             IncludedFoldersList list = new IncludedFoldersList { folders = includedFolders };
             string json = JsonUtility.ToJson(list);
-            PlayerPrefs.SetString(INCLUDED_FOLDERS_PREFS_KEY, json);
-            PlayerPrefs.Save();
+            EditorPrefs.SetString(INCLUDED_FOLDERS_PREFS_KEY, json);
         }
 
         [System.Serializable]

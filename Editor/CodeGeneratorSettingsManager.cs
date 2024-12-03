@@ -4,6 +4,7 @@ using Sanat.CodeGenerator.Agents;
 using Sanat.CodeGenerator.Bookmarks;
 using Sanat.CodeGenerator.CodebaseRag;
 using UnityEngine;
+using UnityEditor;
 
 namespace Sanat.CodeGenerator.Editor
 {
@@ -11,20 +12,19 @@ namespace Sanat.CodeGenerator.Editor
     {
         public void SaveSettings(CodeGenerator codeGenerator)
         {
-            PlayerPrefs.SetString("SelectedClassNames", string.Join(",", codeGenerator.selectedClassNames));
-            PlayerPrefs.SetString("GeminiApiKey", codeGenerator.geminiApiKey);
-            PlayerPrefs.SetString("OpenaiApiKey", codeGenerator.openaiApiKey);
-            PlayerPrefs.SetString("GroqApiKey", codeGenerator.groqApiKey);
-            PlayerPrefs.SetString("AntrophicApiKey", codeGenerator.antrophicApiKey);
-            PlayerPrefs.SetString("GeminiProjectName", codeGenerator.GeminiProjectName);
-            PlayerPrefs.SetString("SupabaseUrl", codeGenerator.supabaseUrl);
-            PlayerPrefs.SetString("SupabaseKey", codeGenerator.supabaseKey);
-            PlayerPrefs.SetString("TableName", codeGenerator.tableName);
-            PlayerPrefs.SetInt("IsRag", codeGenerator.isRag ? 1 : 0);
-            PlayerPrefs.SetString("IgnoredFolders", string.Join(",", codeGenerator._ignoredFolders));
-            PlayerPrefs.SetString(CodeGenerator.INCLUDED_FOLDERS_PREFS_KEY, JsonUtility.ToJson(codeGenerator.includedFolders));
+            EditorPrefs.SetString("SelectedClassNames", string.Join(",", codeGenerator.selectedClassNames));
+            EditorPrefs.SetString("GeminiApiKey", codeGenerator.geminiApiKey);
+            EditorPrefs.SetString("OpenaiApiKey", codeGenerator.openaiApiKey);
+            EditorPrefs.SetString("GroqApiKey", codeGenerator.groqApiKey);
+            EditorPrefs.SetString("AntrophicApiKey", codeGenerator.antrophicApiKey);
+            EditorPrefs.SetString("GeminiProjectName", codeGenerator.GeminiProjectName);
+            EditorPrefs.SetString("SupabaseUrl", codeGenerator.supabaseUrl);
+            EditorPrefs.SetString("SupabaseKey", codeGenerator.supabaseKey);
+            EditorPrefs.SetString("TableName", codeGenerator.tableName);
+            EditorPrefs.SetInt("IsRag", codeGenerator.isRag ? 1 : 0);
+            EditorPrefs.SetString("IgnoredFolders", string.Join(",", codeGenerator._ignoredFolders));
+            EditorPrefs.SetString(CodeGenerator.INCLUDED_FOLDERS_PREFS_KEY, JsonUtility.ToJson(codeGenerator.includedFolders));
             codeGenerator.bookmarkManager.SaveBookmarksToPrefs();
-            PlayerPrefs.Save();
             codeGenerator.bookmarkManager.OnBookmarkLoaded -= codeGenerator.LoadBookmarkData;
             SaveAgentModelSettings(codeGenerator);
         }
@@ -32,34 +32,41 @@ namespace Sanat.CodeGenerator.Editor
         public void LoadSettings(CodeGenerator codeGenerator)
         {
             codeGenerator.selectedClassNames = new List<string>(
-                PlayerPrefs.GetString("SelectedClassNames", "")
+                EditorPrefs.GetString("SelectedClassNames", "")
                     .Split(',')
                     .Where(s => !string.IsNullOrEmpty(s))
             );
-            codeGenerator.geminiApiKey = PlayerPrefs.GetString("GeminiApiKey", "");
-            codeGenerator.openaiApiKey = PlayerPrefs.GetString("OpenaiApiKey", "");
-            codeGenerator.groqApiKey = PlayerPrefs.GetString("GroqApiKey", "");
-            codeGenerator.antrophicApiKey = PlayerPrefs.GetString("AntrophicApiKey", "");
-            codeGenerator.supabaseUrl = PlayerPrefs.GetString("SupabaseUrl", "");
-            codeGenerator.supabaseKey = PlayerPrefs.GetString("SupabaseKey", "");
-            codeGenerator.tableName = PlayerPrefs.GetString("TableName", "");
-            codeGenerator.isRag = PlayerPrefs.GetInt("IsRag", 0) == 1;
-            codeGenerator.GeminiProjectName = PlayerPrefs.GetString(CodeGenerator.PREFS_GEMINI_PROJECT_NAME, "");
-            codeGenerator._ignoredFolders = PlayerPrefs.GetString("IgnoredFolders", "").Split(',').Where(s => !string.IsNullOrEmpty(s)).ToList();
-            codeGenerator.includedFolders = JsonUtility.FromJson<List<CodeGenerator.IncludedFolder>>(PlayerPrefs.GetString(CodeGenerator.INCLUDED_FOLDERS_PREFS_KEY, "[]"));
-            codeGenerator.taskInput = PlayerPrefs.GetString(CodeGenerator.PREFS_KEY_TASK, "");
+            codeGenerator.geminiApiKey = EditorPrefs.GetString("GeminiApiKey", "");
+            codeGenerator.openaiApiKey = EditorPrefs.GetString("OpenaiApiKey", "");
+            codeGenerator.groqApiKey = EditorPrefs.GetString("GroqApiKey", "");
+            codeGenerator.antrophicApiKey = EditorPrefs.GetString("AntrophicApiKey", "");
+            codeGenerator.supabaseUrl = EditorPrefs.GetString("SupabaseUrl", "");
+            codeGenerator.supabaseKey = EditorPrefs.GetString("SupabaseKey", "");
+            codeGenerator.tableName = EditorPrefs.GetString("TableName", "");
+            codeGenerator.isRag = EditorPrefs.GetInt("IsRag", 0) == 1;
+            codeGenerator.GeminiProjectName = EditorPrefs.GetString(CodeGenerator.PREFS_GEMINI_PROJECT_NAME, "");
+            codeGenerator._ignoredFolders = EditorPrefs.GetString("IgnoredFolders", "").Split(',').Where(s => !string.IsNullOrEmpty(s)).ToList();
+            codeGenerator.includedFolders = JsonUtility.FromJson<List<CodeGenerator.IncludedFolder>>(EditorPrefs.GetString(CodeGenerator.INCLUDED_FOLDERS_PREFS_KEY, "[]"));
+            codeGenerator.taskInput = EditorPrefs.GetString(CodeGenerator.PREFS_KEY_TASK, "");
             codeGenerator.isGeneratingCode = false;
-            
+            Debug.Log("Loaded EditorPrefs settings");
+            // Rest of the initialization code remains the same
             CodeGenerator.IncludedFoldersManager = new IncludedFoldersManager();
+            Debug.Log("IncludedFoldersManager created");
             codeGenerator.RefreshClassList();
+            Debug.Log("Class list refreshed");
             codeGenerator.CheckAndHandleFirstLaunch();
+            Debug.Log("First launch checked");
             codeGenerator.bookmarkManager = new CodeGeneratorBookmarks();
             codeGenerator.bookmarkManager.OnBookmarkLoaded += codeGenerator.LoadBookmarkData;
             codeGenerator.bookmarkManager.LoadBookmarksFromPrefs();
+            Debug.Log("Bookmarks loaded");
             var bookmarks = codeGenerator.bookmarkManager.GetBookmarks();
             codeGenerator.bookmarkManager.InitializeReorderableList();
+            Debug.Log("Reorderable list initialized");
             codeGenerator.ragProcessor = new RagProcessor();
             InitializeAgentModelSettings(codeGenerator);
+            Debug.Log("Agent model settings initialized");
             codeGenerator.IsSettingsLoaded = true;
         }
         
@@ -90,10 +97,8 @@ namespace Sanat.CodeGenerator.Editor
         
         public void SaveAgentModelSettings(CodeGenerator codeGenerator)
         {
-            // Convert dictionary to JSON and save to PlayerPrefs
             string settingsJson = JsonUtility.ToJson(new SerializableAgentModelSettingsList(codeGenerator.agentModelSettings));
-            PlayerPrefs.SetString("AgentModelSettings", settingsJson);
-            PlayerPrefs.Save();
+            EditorPrefs.SetString("AgentModelSettings", settingsJson);
         }
         
         [System.Serializable]

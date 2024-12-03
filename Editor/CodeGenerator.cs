@@ -90,13 +90,15 @@ namespace Sanat.CodeGenerator
         private async void OnEnable()
         {
             InitializeManagers();
-            await LoadSettingsDelayedAsync();
-            //_settingsManager.LoadSettings(this);
+            // if (IsFirstLaunch())
+                await LoadSettingsDelayedAsync();
+            // else
+            //     _settingsManager.LoadSettings(this);
         }
         
         private async UniTask LoadSettingsDelayedAsync()
         {
-            await UniTask.Delay(System.TimeSpan.FromSeconds(10), DelayType.DeltaTime, PlayerLoopTiming.Update);
+            await UniTask.Delay(System.TimeSpan.FromSeconds(5), DelayType.DeltaTime, PlayerLoopTiming.Update);
             _settingsManager.LoadSettings(this);
         }
         
@@ -144,7 +146,7 @@ namespace Sanat.CodeGenerator
             StartButtonAnimation();
         }
 
-        private void SaveTaskToPrefs() => PlayerPrefs.SetString(PREFS_KEY_TASK, taskInput);
+        private void SaveTaskToPrefs() => EditorPrefs.SetString(PREFS_KEY_TASK, taskInput);
 
         public void ExecGenerateCode()
         {
@@ -276,14 +278,16 @@ namespace Sanat.CodeGenerator
                     if (_currentRun == 2)
                     {
                         UpdateProgress(0.4f);
-                        Debug.Log($"Current run: {_currentRun}; model: {Model.GPT4o_16K.Name}");
-                        agentCodeArchitector.ChangeLLM(AbstractAgentHandler.ApiProviders.OpenAI, Model.GPT4o_16K.Name);
+                        Debug.Log($"Current run: {_currentRun}; model: {Sanat.ApiAnthropic.Model.Claude35Latest}");
+                        //Debug.Log($"Current run: {_currentRun}; model: {Model.GPT4o_16K.Name}");
+                        //agentCodeArchitector.ChangeLLM(AbstractAgentHandler.ApiProviders.OpenAI, Model.GPT4o_16K.Name);
                     }else if (_currentRun == 3)
                     {
                         UpdateProgress(0.6f); 
-                        Debug.Log($"Current run: {_currentRun}; model: {ApiGeminiModels.Pro}");
-                        agentCodeArchitector.ChangeLLM(AbstractAgentHandler.ApiProviders.Gemini, ApiGeminiModels.Pro);
-                    }else if (_currentRun == 3)
+                        Debug.Log($"Current run: {_currentRun}; model: {Sanat.ApiAnthropic.Model.Claude35Latest}");
+                        //Debug.Log($"Current run: {_currentRun}; model: {ApiGeminiModels.Pro}");
+                        //agentCodeArchitector.ChangeLLM(AbstractAgentHandler.ApiProviders.Gemini, ApiGeminiModels.Pro);
+                    }else if (_currentRun == 4)
                     {
                         UpdateProgress(0.8f); 
                         Debug.Log($"Current run: {_currentRun}; model: {Model.GPT4o1mini.Name}");
@@ -445,14 +449,13 @@ namespace Sanat.CodeGenerator
             EditorGUILayout.BeginHorizontal();
             EditorGUILayout.LabelField("Gemini Project Name", GUILayout.Width(150));
             GeminiProjectName = EditorGUILayout.TextField(GeminiProjectName);
-            PlayerPrefs.SetString("GeminiProjectName", GeminiProjectName);
+            EditorPrefs.SetString(Gemini.PREFS_GEMINI_PROJECT_NAME, GeminiProjectName);
             EditorGUILayout.EndHorizontal();
             
             
             EditorGUILayout.Space();
             IncludedFoldersManager.DrawIncludedFoldersUI();
             EditorGUILayout.EndVertical();
-            PlayerPrefs.Save();
         }
         #endregion
 
@@ -460,7 +463,7 @@ namespace Sanat.CodeGenerator
         {
             EditorGUILayout.LabelField(fieldName, GUILayout.Width(150));
             apiKeyVariable = EditorGUILayout.PasswordField(apiKeyVariable);
-            PlayerPrefs.SetString(playerPrefsKey, apiKeyVariable);
+            EditorPrefs.SetString(playerPrefsKey, apiKeyVariable);
             if (GUILayout.Button("Get Key", GUILayout.Width(70)))
             {
                 Application.OpenURL(url);
@@ -592,11 +595,10 @@ namespace Sanat.CodeGenerator
         private bool IsFirstLaunch()
         {
             const string key = "CODE_GENERATOR_FIRST_LAUNCH";
-            bool isFirstLaunch = PlayerPrefs.GetInt(key, 1) == 1;
+            bool isFirstLaunch = EditorPrefs.GetInt(key, 1) == 1;
             if (isFirstLaunch)
             {
-                PlayerPrefs.SetInt(key, 0);
-                PlayerPrefs.Save();
+                EditorPrefs.SetInt(key, 0);
             }
             return isFirstLaunch;
         }

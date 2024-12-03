@@ -6,7 +6,7 @@ I will give you task and possible answer. You need to validate the code.
 VALID (1) code should be:
 -full
 -contain all parts to accomplish the task
--should contain only one code file
+-may contain several code files, but they should have full code and path included like in examples.
 
 DO NOT check the logic of the code
 CHECK if the code have missing, skipped parts
@@ -170,7 +170,7 @@ public class SimpleCharacterController : MonoBehaviour
 ```
 
 Result: 0
-Explanation: \nsolution is missing all code parts that were not changed, so when we insert provided solution program will fail. Solution should have full code.
+Explanation: solution is missing all code parts that were not changed, so when we insert provided solution program will fail. Solution should have full code.
 
 # EXAMPLE 3:
 Task: remove check for "if (controller.isGrounded)".
@@ -233,6 +233,6 @@ Solution:
 ```
 
 Result: 0
-Explanation: \nsolution is missing all code parts that were not changed, so when we insert provided solution program will fail. Solution should have full code.
+Explanation: solution is missing all code parts that were not changed, so when we insert provided solution program will fail. Solution should have full code.
 
 # CODE: 

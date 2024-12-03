@@ -3,12 +3,20 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text.RegularExpressions;
+using System.Threading.Tasks;
 using Sanat.ApiOpenAI;
 using Sanat.ApiAnthropic;
 using Sanat.ApiGemini;
 using Sanat.ApiGroq;
 using UnityEngine;
 using UnityEngine.Networking;
+using ChatMessage = Sanat.ApiGemini.ChatMessage;
+using ChatResponse = Sanat.ApiOpenAI.ChatResponse;
+using Sanat.ApiAnthropic;
+using Newtonsoft.Json;
+using System.Net.Http;
+using System.Net.Http.Headers;
+using System.Text;
 
 namespace Sanat.CodeGenerator.Agents
 {
@@ -29,6 +37,7 @@ namespace Sanat.CodeGenerator.Agents
         public const string KEY_FIGURE_CLOSE = "[figureClose]";
         public enum ApiProviders { OpenAI, Anthropic, Groq, Gemini }
 
+        public readonly string CSV_SEPARATOR = "[CSV_SEPARATOR]";
         public enum Brackets { round, square, curly, angle }
         protected bool _isModelChanged;
         protected bool _isChangedModelOpenai;
@@ -37,6 +46,9 @@ namespace Sanat.CodeGenerator.Agents
         protected bool _isChangedModelAnthropic;
         protected string _newGeminiModel;
         protected string _modelName;
+        public int ConversationHistoryMemory { get; set; } = 1;
+
+        protected  HttpClient httpClient;
 
         public void SaveResultToFile(string result)
         {
@@ -68,7 +80,7 @@ namespace Sanat.CodeGenerator.Agents
         
         public void StoreKeys(ApiKeys keys) => Apikeys = keys;
 
-        protected virtual Sanat.ApiOpenAI.Model GetModel() => Sanat.ApiOpenAI.Model.GPT4omini;
+        protected virtual ApiOpenAI.Model GetModel() => ApiOpenAI.Model.GPT4omini;
         
         protected virtual string GetGeminiModel() => ApiGeminiModels.Flash;
         
@@ -113,47 +125,105 @@ namespace Sanat.CodeGenerator.Agents
 
         public class BotParameters
         {
+            public string systemMessage;
             public string prompt;
             public ApiProviders apiProvider;
-            public string modelName;
             public float temp;
+            public string modelName;
             public Action<string> onComplete;
+            public Action<ToolCalls> onOpenaiToolComplete;
+            public Action<CompletionResponse> onOpenaiChatResponseComplete;
             public ToolRequest geminiToolRequest;
+            public OpenAI.Tool[] openaiTools;
             public Sanat.ApiAnthropic.Model antrophicModel;
+            public bool isToolUse = false;
             
-            public BotParameters(string prompt, ApiProviders apiProvider, float temp, Action<string> onComplete, string modelName = null)
+            public BotParameters(string prompt, ApiProviders apiProvider, float temp, Action<string> onComplete, string modelName = null, bool isToolUse = false)
             {
                 this.prompt = prompt;
                 this.apiProvider = apiProvider;
                 this.temp = temp;
                 this.onComplete = onComplete;
                 this.modelName = modelName;
+                this.isToolUse = isToolUse;
             }
+        }
+
+        public void AskGroqTool(BotParameters botParameters)
+        {
+            List<ApiOpenAI.ChatMessage> messages = new List<ApiOpenAI.ChatMessage>();
+            messages.Add(new ApiOpenAI.ChatMessage("user", botParameters.prompt));
+            ApiOpenAI.Model model = ApiGroqModels.GetModelByName(_modelName);
+            UnityWebRequestAsyncOperation request = Groq.SubmitToolChatAsync(
+                Apikeys.groq,
+                model,
+                botParameters.temp,
+                1, 
+                0, 
+                0,
+                model.MaxOutputTokens,
+                messages,
+                botParameters.onOpenaiChatResponseComplete,
+                botParameters.openaiTools
+            );
+        }
+
+        public void AskChatGptTool(BotParameters botParameters)
+        {
+            List<ApiOpenAI.ChatMessage> messages = new List<ApiOpenAI.ChatMessage>();
+            messages.Add(new ApiOpenAI.ChatMessage("user", botParameters.prompt));
+            ApiOpenAI.Model model = ApiOpenAI.Model.GetModelByName(_modelName);
+            UnityWebRequestAsyncOperation request = OpenAI.SubmitToolChatAsync(
+                Apikeys.openAI,
+                model,
+                botParameters.temp,
+                1, 
+                0, 
+                0,
+                model.MaxOutputTokens,
+                messages,
+                botParameters.onOpenaiChatResponseComplete,
+                botParameters.openaiTools
+            );
         }
         
         public void AskBot(BotParameters botParameters) {
             switch (botParameters.apiProvider)
             {
                 case ApiProviders.OpenAI:
-                    AskChatGpt(botParameters.prompt, botParameters.temp, botParameters.onComplete);
+                    if (botParameters.isToolUse)
+                    {
+                        AskChatGptTool(botParameters);
+                    }
+                    else
+                    {
+                        AskChatGpt(botParameters.prompt, botParameters.temp, botParameters.onComplete);
+                    }
                     break;
                 case ApiProviders.Anthropic:
                     ApiAnthropic.Model model = ApiAnthropic.Model.GetModelByName(_modelName);
                     AskAntrophic(model, botParameters.prompt, botParameters.temp, botParameters.onComplete);
                     break;
                 case ApiProviders.Groq:
-                    AskGroq(botParameters.prompt, botParameters.temp, botParameters.onComplete);
+                    if (botParameters.isToolUse)
+                    {
+                        AskGroqTool(botParameters);
+                    }
+                    else
+                    {
+                        AskGroq(botParameters.prompt, botParameters.temp, botParameters.onComplete);
+                    }
                     break;
                 case ApiProviders.Gemini:
                     AskGemini(botParameters.prompt, botParameters.temp, botParameters.onComplete);
                     break;
             }
         }
-        
-        public void AskChatGpt(string prompt, float temp, Action<string> onComplete) {
+
+        public void AskChatGpt(string prompt, float temp, Action<string> onComplete, List<OpenAI.Tool> tools = null) {
             List<ApiOpenAI.ChatMessage> messages = new List<ApiOpenAI.ChatMessage>();
             messages.Add(new ApiOpenAI.ChatMessage("user", prompt));
-            var model = ApiOpenAI.Model.GetModelByName(_modelName);
+            ApiOpenAI.Model model = ApiOpenAI.Model.GetModelByName(_modelName);
             
             UnityWebRequestAsyncOperation request = OpenAI.SubmitChatAsync(
                 Apikeys.openAI,
@@ -165,7 +235,7 @@ namespace Sanat.CodeGenerator.Agents
             );
         }
         
-        public void AskAntrophic(Sanat.ApiAnthropic.Model model, string prompt, float temp, Action<string> onComplete) {
+        public void AskAntrophic(ApiAnthropic.Model model, string prompt, float temp, Action<string> onComplete) {
             List<ApiAnthropic.ChatMessage> messages = new List<ApiAnthropic.ChatMessage>();
             messages.Add(new ApiAnthropic.ChatMessage("user", prompt));
 
@@ -173,21 +243,21 @@ namespace Sanat.CodeGenerator.Agents
                 Apikeys.antrophic,
                 model,
                 temp,
-                model.MaxOutputTokens,
+                4000,
                 messages,
                 onComplete
             );
         }
         
         public void AskGroq(string prompt, float temp, Action<string> onComplete) {
-            List<ApiGroq.ChatMessage> messages = new List<ApiGroq.ChatMessage>();
-            messages.Add(new ApiGroq.ChatMessage("user", prompt));
+            List<ApiOpenAI.ChatMessage> messages = new List<ApiOpenAI.ChatMessage>();
+            messages.Add(new ApiOpenAI.ChatMessage("user", prompt));
 
             UnityWebRequestAsyncOperation request = Groq.SubmitChatAsync(
                 Apikeys.groq,
-                ApiGroqModels.Llama3_70b_8192,
+                ApiGroqModels.Llama3_70b_8192_tool,
                 temp,
-                4095,
+                8192,
                 messages,
                 onComplete
             );
@@ -199,7 +269,7 @@ namespace Sanat.CodeGenerator.Agents
 
             UnityWebRequestAsyncOperation request = Gemini.SubmitChatAsync(
                 Apikeys.gemini,
-                GetGeminiModel(), // or whatever model you're using
+                _modelName, // or whatever model you're using
                 temp,
                 4095,
                 messages,

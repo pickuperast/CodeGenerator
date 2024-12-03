@@ -1,27 +1,30 @@
 using System;
 using System.Collections.Generic;
+using InfinityCode.UltimateEditorEnhancer.JSON;
+using Sanat.ApiOpenAI;
 using UnityEngine;
 using UnityEngine.Networking;
+using Sanat.ApiOpenAI;
 
 namespace Sanat.ApiGroq
 {
     public static class Groq
     {
         public static string BaseURL { get; set; } = "https://api.groq.com/openai/v1/";
-        public static string ChatCompletionsURL => $"{BaseURL}chat/completions";
+        public static string ChatURL => $"{BaseURL}chat/completions";
 
         public static bool IsApiKeyValid(string apiKey)
         {
             return !string.IsNullOrEmpty(apiKey);
         }
 
-        public static UnityWebRequestAsyncOperation SubmitChatAsync(string apiKey, string model, float temp, int maxTokens,
+        public static UnityWebRequestAsyncOperation SubmitChatAsync(string apiKey, ApiOpenAI.Model model, float temp, int maxTokens,
             List<ChatMessage> messages, Action<string> callback)
         {
-            var chatRequest = new ChatRequest(model, temp, messages, maxTokens);
+            var chatRequest = new ChatRequest(model.Name, messages,temp, maxTokens);
             string jsonData = JsonUtility.ToJson(chatRequest);
 
-            UnityWebRequest webRequest = CreateWebRequest(apiKey, ChatCompletionsURL, jsonData);
+            UnityWebRequest webRequest = CreateWebRequest(apiKey, ChatURL, jsonData);
 
             UnityWebRequestAsyncOperation asyncOp = webRequest.SendWebRequest();
 
@@ -65,63 +68,56 @@ namespace Sanat.ApiGroq
 
             return webRequest;
         }
-    }
 
-    [Serializable]
-    public class ChatRequest
-    {
-        public string model;
-        public int max_tokens;
-        public float temperature;
-        public List<ChatMessage> messages;
+        public static UnityWebRequestAsyncOperation SubmitToolChatAsync(
+            string apiKey, Model model, 
+            float temperature, float top_p,
+            float frequency_penalty, float presence_penalty, 
+            int maxTokens,
+            List<ChatMessage> messages, Action<CompletionResponse> callback, OpenAI.Tool[] tools, string tool_choice = "required"
+            ){
+            var chatRequest = new ChatRequest(model.Name, messages, 
+                temperature, top_p, frequency_penalty, presence_penalty,
+                maxTokens);
+            string jsonData = Newtonsoft.Json.JsonConvert.SerializeObject(chatRequest);
+            if (tools != null)
+            {
+                jsonData = jsonData.Insert(jsonData.Length - 1, $",\"tool_choice\": \"required\"");
+                // Append  tools to the jsonData
+                var toolsJson = Newtonsoft.Json.JsonConvert.SerializeObject(tools);
+                jsonData = jsonData.Insert(jsonData.Length - 1, $",\"tools\": {toolsJson}");
+            }
 
-        public ChatRequest(string model, float temperature, List<ChatMessage> messages, int maxTokens)
-        {
-            this.model = model;
-            this.max_tokens = maxTokens;
-            //If you set a temperature value of 0, it will be converted to 1e-8. If you run into any issues, please try setting the value to a float32 > 0 and <= 2.
-            this.temperature = Mathf.Approximately(temperature, Mathf.Epsilon) ? 0.0001f : temperature;
-            this.messages = messages;
+            UnityWebRequest webRequest = CreateWebRequest(apiKey, ChatURL, jsonData);
+
+            UnityWebRequestAsyncOperation asyncOp = webRequest.SendWebRequest();
+
+            asyncOp.completed += (op) =>
+            {
+                var success = webRequest.result == UnityWebRequest.Result.Success;
+                var text = success ? webRequest.downloadHandler.text : string.Empty;
+                if (!success) Debug.Log($"{webRequest.error}\n{webRequest.downloadHandler.text}");
+                webRequest.Dispose();
+                webRequest = null;
+
+                if (!string.IsNullOrEmpty(text))
+                {
+                    var responseData = JsonUtility.FromJson<CompletionResponse>(text);
+                    callback?.Invoke(responseData);
+            
+                    var tokensPrompt = responseData.usage.prompt_tokens;
+                    var tokensCompletion = responseData.usage.completion_tokens;
+                    var tokensTotal = responseData.usage.total_tokens;
+                    var prompt_price = 0;
+                    var response_price = 0;
+                    var costPrompt = tokensPrompt * prompt_price / 1000;
+                    var costResponse = tokensCompletion * response_price / 1000;
+                    var cost = costPrompt + costResponse;
+                    Debug.Log($"{model.Name} Usage({cost.ToString("F3")}$): prompt_tokens: {tokensPrompt}; completion_tokens: {tokensCompletion}; total_tokens: {tokensTotal}");
+                }
+            };
+
+            return asyncOp;
         }
-    }
-
-    [Serializable]
-    public class ChatMessage
-    {
-        public string role;
-        public string content;
-
-        public ChatMessage(string role, string content)
-        {
-            this.role = role;
-            this.content = content;
-        }
-    }
-
-    [Serializable]
-    public class ChatResponse
-    {
-        public string id;
-        public string object_type;
-        public long created;
-        public string model;
-        public List<Choice> choices;
-        public Usage usage;
-    }
-
-    [Serializable]
-    public class Choice
-    {
-        public int index;
-        public ChatMessage message;
-        public string finish_reason;
-    }
-
-    [Serializable]
-    public class Usage
-    {
-        public int prompt_tokens;
-        public int completion_tokens;
-        public int total_tokens;
     }
 }

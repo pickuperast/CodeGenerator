@@ -18,6 +18,7 @@ namespace Sanat.CodeGenerator.Agents
             Description = "Validates code for agents";
             Temperature = .0f;
             StoreKeys(apiKeys);
+            _modelName = Sanat.ApiOpenAI.Model.GPT4omini.Name;
             string promptLocation = Application.dataPath + $"{PROMPTS_FOLDER_PATH}{PromptFilename()}";
             Instructions = LoadPrompt(promptLocation);
             _prompt = $"{Instructions} " +
@@ -31,7 +32,7 @@ namespace Sanat.CodeGenerator.Agents
 
         public override void Handle(string input)
         {
-            Debug.Log($"<color=purple>{Name}</color> asking: {_prompt}");
+            Debug.Log($"<color=yellow>{Name}</color> asking: {_prompt}");
             BotParameters botParameters = new BotParameters(_prompt, SelectedApiProvider, Temperature, delegate(string result)
             {
                 //Debug.Log($"<color=purple>{Name}</color> result: {result}");

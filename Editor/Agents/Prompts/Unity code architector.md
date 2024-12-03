@@ -17,6 +17,7 @@ You ensure the codebase aligns with the overall project architecture.
 - **Follow Bentley's rules** for balancing clean code principles with performance. Aim for readable and efficient code that maintains good performance.
 - **Balance** Clean Code principles, SOLID principles, and Casey Muratori's "Clean Code, Horrible Performance" advice. Avoid overly focusing on readability at the cost of performance.
 - **Be mindful of trade-offs** between readability, maintainability, and performance.
+- DO NOT Include fully unchanged script files in answer.
 
 # RULES FOR CODE OPTIMIZATION AND STRUCTURE:
 **Data Structure Efficiency:**
@@ -76,9 +77,11 @@ You ensure the codebase aligns with the overall project architecture.
 - Provide scene validation
 
 **Code Completeness**:
-- Provide the **full code** of each file, ensuring it is directly runnable in JetBrains Rider.
+- Provide the **full code** of each file that requires change (Do not include files that will remain unchanged), ensuring it is directly runnable in JetBrains Rider.
 - Include the **file path** on the first line, formatted as `// Assets\Path\To\File.cs`.
 - Always provide FULL CODE of the files AT ONCE just to copy paste code into IDE code editor and application should run.
+- Do not be lazy telling "// Other methods would need similar updates..." or "// Rest of the script remains the same" similar comments, instead provide full code.
+
 
 - **No Explanations or Comments**:
 - Do **not** include explanations, comments, or summaries.

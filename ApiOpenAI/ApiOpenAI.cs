@@ -1,16 +1,16 @@
 // Copyright (c) Sanat. All rights reserved.
-
 using System;
 using System.Collections.Generic;
-using System.IO;
+using Newtonsoft.Json;
 using UnityEngine;
 using UnityEngine.Networking;
+using UnityEngine.Serialization;
 
 namespace Sanat.ApiOpenAI
 {
     public enum TextModelName 
     { 
-        GPT_o1_preview, GPT_o1_mini, GPT_4o, GPT_4_Turbo, GPT_4, GPT_4_32K, 
+        GPT_4o, GPT_4_Turbo, GPT_4, GPT_4_32K, 
         GPT3_5_Turbo, GPT3_5_Turbo_16K, 
         Davinci, Curie, Babbage, Ada,
         FineTune
@@ -104,7 +104,7 @@ namespace Sanat.ApiOpenAI
                 if (!string.IsNullOrEmpty(text))
                 {
                     var responseData = JsonUtility.FromJson<CompletionResponse>(text);
-                    text = responseData.choices[0].text.Trim();
+                    text = responseData.choices[0].message.content.Trim();
                 }
                 callback?.Invoke(text);
             };
@@ -123,10 +123,10 @@ namespace Sanat.ApiOpenAI
         /// <param name="messages">A list of messages comprising the conversation so far.</param>
         /// <param name="callback">This event handler will be passed the API result.</param>
         public static UnityWebRequestAsyncOperation SubmitChatAsync(string apiKey, Model model, float temperature, int maxTokens,
-            List<ChatMessage> messages, Action<string> callback)
+            List<ChatMessage> messages, Action<string> callback, OpenAI.Tool[] tools = null)
         {
             return SubmitChatAsync(apiKey, model, temperature,
-                top_p: 1, frequency_penalty: 0, presence_penalty: 0, maxTokens, messages, callback);
+                top_p: 1, frequency_penalty: 0, presence_penalty: 0, maxTokens, messages, callback, tools);
         }
 
         /// <summary>
@@ -146,18 +146,19 @@ namespace Sanat.ApiOpenAI
             float temperature, float top_p,
             float frequency_penalty, float presence_penalty, 
             int maxTokens,
-            List<ChatMessage> messages, Action<string> callback)
+            List<ChatMessage> messages, Action<string> callback, OpenAI.Tool[] tools = null)
         {
             var chatRequest = new ChatRequest(model.Name, messages, 
                 temperature, top_p, frequency_penalty, presence_penalty,
                 maxTokens);
-            if (model == Model.GPT4o1mini)
+            string jsonData = Newtonsoft.Json.JsonConvert.SerializeObject(chatRequest);
+            if (tools != null)
             {
-                chatRequest.temperature = 1;
+                jsonData = jsonData.Insert(jsonData.Length - 1, $",\"tool_choice\": \"auto\"");
+                // Append  tools to the jsonData
+                var toolsJson = Newtonsoft.Json.JsonConvert.SerializeObject(tools);
+                jsonData = jsonData.Insert(jsonData.Length - 1, $",\"tools\": {toolsJson}");
             }
-            
-            string jsonData = JsonUtility.ToJson(chatRequest);
-
             UnityWebRequest webRequest = CreateWebRequest(apiKey, ChatURL, jsonData);
 
             UnityWebRequestAsyncOperation asyncOp = webRequest.SendWebRequest();
@@ -177,8 +178,10 @@ namespace Sanat.ApiOpenAI
                     var tokensPrompt = responseData.usage.prompt_tokens;
                     var tokensCompletion = responseData.usage.completion_tokens;
                     var tokensTotal = responseData.usage.total_tokens;
-                    var costPrompt = tokensPrompt * model.InputPrice / 1000000f;
-                    var costResponse = tokensCompletion * model.OutputPrice / 1000000f;
+                    var prompt_price = GetPromptPrice(model.Name);
+                    var response_price = GetResponsePrice(model.Name);
+                    var costPrompt = tokensPrompt * prompt_price / 1000;
+                    var costResponse = tokensCompletion * response_price / 1000;
                     var cost = costPrompt + costResponse;
                     Debug.Log($"{model.Name} Usage({cost.ToString("F3")}$): prompt_tokens: {tokensPrompt}; completion_tokens: {tokensCompletion}; total_tokens: {tokensTotal}");
                 }
@@ -186,6 +189,94 @@ namespace Sanat.ApiOpenAI
             };
 
             return asyncOp;
+        }
+        
+        public static UnityWebRequestAsyncOperation SubmitToolChatAsync(string apiKey, Model model, 
+            float temperature, float top_p,
+            float frequency_penalty, float presence_penalty, 
+            int maxTokens,
+            List<ChatMessage> messages, Action<CompletionResponse> callback, OpenAI.Tool[] tools)
+        {
+            var chatRequest = new ChatRequest(model.Name, messages, 
+                temperature, top_p, frequency_penalty, presence_penalty,
+                maxTokens);
+            string jsonData = JsonUtility.ToJson(chatRequest);
+            if (tools != null)
+            {
+                jsonData = jsonData.Insert(jsonData.Length - 1, $",\"tool_choice\": \"required\"");
+                // Append  tools to the jsonData
+                var toolsJson = Newtonsoft.Json.JsonConvert.SerializeObject(tools);
+                jsonData = jsonData.Insert(jsonData.Length - 1, $",\"tools\": {toolsJson}");
+            }
+
+            UnityWebRequest webRequest = CreateWebRequest(apiKey, ChatURL, jsonData);
+
+            UnityWebRequestAsyncOperation asyncOp = webRequest.SendWebRequest();
+
+            asyncOp.completed += (op) =>
+            {
+                var success = webRequest.result == UnityWebRequest.Result.Success;
+                var text = success ? webRequest.downloadHandler.text : string.Empty;
+                if (!success) Debug.Log($"{webRequest.error}\n{webRequest.downloadHandler.text}");
+                webRequest.Dispose();
+                webRequest = null;
+
+                if (!string.IsNullOrEmpty(text))
+                {
+                    var responseData = JsonUtility.FromJson<CompletionResponse>(text);
+                    callback?.Invoke(responseData);
+            
+                    var tokensPrompt = responseData.usage.prompt_tokens;
+                    var tokensCompletion = responseData.usage.completion_tokens;
+                    var tokensTotal = responseData.usage.total_tokens;
+                    var prompt_price = GetPromptPrice(model.Name);
+                    var response_price = GetResponsePrice(model.Name);
+                    var costPrompt = tokensPrompt * prompt_price / 1000;
+                    var costResponse = tokensCompletion * response_price / 1000;
+                    var cost = costPrompt + costResponse;
+                    Debug.Log($"{model.Name} Usage({cost.ToString("F3")}$): prompt_tokens: {tokensPrompt}; completion_tokens: {tokensCompletion}; total_tokens: {tokensTotal}");
+                }
+            };
+
+            return asyncOp;
+        }
+
+        private static float GetPromptPrice(string modelName)
+        {
+            if (modelName == Model.GPT4o_16K.Name)
+            {
+                return 0.00025f;
+            }else if (modelName == Model.GPT4o.Name)
+            {
+                return 0.005f;
+            }else if (modelName == Model.GPT4omini.Name)
+            {
+                return 0.00015f;
+            }else if (modelName == Model.GPT3_5_Turbo.Name)
+            {
+                return 0.0005f;
+            }
+
+            return .05f;
+        }
+
+        private static float GetResponsePrice(string modelName)
+        {
+            if (modelName == Model.GPT4o_16K.Name)
+            {
+                return 0.001f;
+            }else if (modelName == Model.GPT4o.Name)
+            {
+                return 0.015f;
+            }else if (modelName == Model.GPT4omini.Name)
+            {
+                return 0.00060f;
+            }else if (modelName == Model.GPT3_5_Turbo.Name)
+            {
+                return 0.0015f;
+            }
+
+            return .05f;
         }
 
         #endregion
@@ -310,40 +401,6 @@ namespace Sanat.ApiOpenAI
         }
 
         #endregion
-
-        #region Embeddings Generation
-
-        public static UnityWebRequestAsyncOperation SubmitEmbeddingAsync(string apiKey, string input, string model, Action<List<float>> callback)
-        {
-            var embeddingRequest = new EmbeddingRequest(input, model);
-            string jsonData = JsonUtility.ToJson(embeddingRequest);
-
-            UnityWebRequest webRequest = CreateWebRequest(apiKey, $"{BaseURL}embeddings", jsonData);
-
-            UnityWebRequestAsyncOperation asyncOp = webRequest.SendWebRequest();
-
-            asyncOp.completed += (op) =>
-            {
-                var success = webRequest.result == UnityWebRequest.Result.Success;
-                var text = success ? webRequest.downloadHandler.text : string.Empty;
-                if (!success) Debug.Log($"{webRequest.error}\n{webRequest.downloadHandler.text}");
-                webRequest.Dispose();
-                webRequest = null;
-
-                List<float> embedding = null;
-
-                if (!string.IsNullOrEmpty(text))
-                {
-                    var responseData = JsonUtility.FromJson<EmbeddingResponse>(text);
-                    embedding = responseData.data[0].embedding;
-                }
-                callback?.Invoke(embedding);
-            };
-
-            return asyncOp;
-        }
-
-        #endregion
         
         public static UnityWebRequest CreateWebRequest(string apiKey, string url, string jsonData)
         {
@@ -363,5 +420,154 @@ namespace Sanat.ApiOpenAI
 
             return webRequest;
         }
+        
+        public static UnityWebRequest CreateWebRequest(string apiKey, string url, ChatRequest chatRequest)
+        {
+            string jsonData = Newtonsoft.Json.JsonConvert.SerializeObject(chatRequest);
+            byte[] postData = System.Text.Encoding.UTF8.GetBytes(jsonData);
+
+#if UNITY_2022_2_OR_NEWER
+            UnityWebRequest webRequest = UnityWebRequest.PostWwwForm(url, jsonData);
+#else
+            UnityWebRequest webRequest = UnityWebRequest.Post(url, jsonData);
+#endif
+            webRequest.uploadHandler.Dispose();
+            webRequest.uploadHandler = new UploadHandlerRaw(postData);
+            webRequest.disposeUploadHandlerOnDispose = true;
+            webRequest.disposeDownloadHandlerOnDispose = true;
+            webRequest.SetRequestHeader("Content-Type", "application/json");
+            webRequest.SetRequestHeader("Authorization", "Bearer " + apiKey);
+
+            return webRequest;
+        }
+        
+        [Serializable]
+        public class FunctionCall
+        {
+            public string name;
+            public string arguments;
+        }
+        
+        [Serializable]
+        public class Tool
+        {
+            public string type;
+            public ToolFunction function;
+            
+            public Tool(string type, ToolFunction function)
+            {
+                this.type = type;
+                this.function = function;
+            }
+        }
+
+        [Serializable]
+        public class ToolFunction
+        {
+            public string name;
+            public string description;
+            public Parameter parameters;
+            
+            public ToolFunction(string name, string description, Parameter parameters)
+            {
+                this.name = name;
+                this.description = description;
+                this.parameters = parameters;
+            }
+        }
+        
+        [System.Serializable]
+        public class Parameter
+        {
+            [JsonProperty("type")]
+            public string Type { get; set; } = DataTypes.OBJECT;
+
+            [JsonProperty("properties")]
+            public Dictionary<string, Property> Properties { get; set; } = new Dictionary<string, Property>();
+
+            [JsonProperty("required")]
+            public List<string> Required { get; set; } = new List<string>();
+            
+            [JsonProperty("additionalProperties")]
+            public bool AdditionalProperties { get; set; } = false;
+
+            /// <summary>
+            /// Create parameter for the function call. 
+            /// Use AddProperty() to add more properties. 
+            /// Use DataTypes class to access data types available for propertyType
+            /// </summary>
+            public Parameter(string propertyName, string propertyType, string description)
+            {
+                Property property = new Property();
+                property.Description = description;
+                property.Type = propertyType;
+                Properties.Add(propertyName, property);
+            }
+
+            public Parameter()
+            {
+
+            }
+
+            /// <summary>
+            /// Add a Property to the parameter. 
+            /// Use DataTypes class to access data types available for propertyType
+            /// </summary>
+            /// <param name="propertyName"></param>
+            /// <param name="propertyType"></param>
+            /// <param name="description"></param>
+            public void AddProperty(string propertyName, string propertyType, string description)
+            {
+                Property property = new Property();
+                property.Description = description;
+                property.Type = propertyType;
+                Properties.Add(propertyName, property);
+            }
+        }
+
+        [System.Serializable]
+        public class Property
+        {
+            [JsonProperty("type")]
+            public string Type { get; set; }
+
+            [JsonProperty("description")]
+            public string Description { get; set; }
+
+        }
+
+        [System.Serializable]
+        public class Message
+        {
+            public string role;
+            public string content;
+            public ToolCalls[] tool_calls;
+        }
+        
+        [System.Serializable]
+        public class ToolCalls
+        {
+            public string id;
+            public string type;
+            public FunctionCall function;
+        }
+        
+        public enum ChatFinishReason
+        {
+            Stop,
+            Length,
+            ContentFilter,
+            ToolCalls,
+            FunctionCall
+        }
+        
+        public static class DataTypes
+        {
+            public static readonly string STRING = "string";
+            public static readonly string ARRAY = "array";
+            public static readonly string NUMBER = "number";
+            public static readonly string OBJECT = "object";
+        }
     }
+
 }

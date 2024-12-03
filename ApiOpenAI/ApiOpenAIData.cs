@@ -1,7 +1,6 @@
 // Copyright (c) Sanat. All rights reserved.
 using System;
 using System.Collections.Generic;
-using UnityEngine.Serialization;
 
 namespace Sanat.ApiOpenAI
 {
@@ -17,17 +16,17 @@ namespace Sanat.ApiOpenAI
         public float top_p;
         public float frequency_penalty;
         public float presence_penalty;
-        public int max_completion_token;
+        public int max_tokens;
 
         public CompletionRequest(string modelName, string prompt, 
             float temperature, float top_p, 
             float frequency_penalty, float presence_penalty,
-            int maxCompletionToken)
+            int maxTokens)
         {
             this.model = modelName;
             this.prompt = prompt;
             this.temperature = temperature;
-            this.max_completion_token = maxCompletionToken;
+            this.max_tokens = maxTokens;
             this.top_p = top_p;
             this.frequency_penalty = frequency_penalty;
             this.presence_penalty = presence_penalty;
@@ -35,12 +34,12 @@ namespace Sanat.ApiOpenAI
 
         public CompletionRequest(string modelName, string prompt,
             float temperature, 
-            int maxCompletionToken)
+            int maxTokens)
         {
             this.model = modelName;
             this.prompt = prompt;
             this.temperature = temperature;
-            this.max_completion_token = maxCompletionToken;
+            this.max_tokens = maxTokens;
             this.top_p = 1;
             this.frequency_penalty = 0;
             this.presence_penalty = 0;
@@ -61,9 +60,7 @@ namespace Sanat.ApiOpenAI
     [Serializable]
     public class Choice
     {
-        public string text;
-        public int index;
-        public object logprobs;
+        public OpenAI.Message message;
         public string finish_reason;
     }
 
@@ -136,29 +133,29 @@ namespace Sanat.ApiOpenAI
         public float top_p;
         public float frequency_penalty;
         public float presence_penalty;
-        public int max_completion_tokens;
+        public int max_tokens;
 
         public ChatRequest(string modelName, List<ChatMessage> messages, 
             float temperature, float top_p,
             float frequency_penalty, float presence_penalty, 
-            int maxCompletionTokens)
+            int maxTokens)
         {
             this.model = modelName;
             this.messages = messages;
             this.temperature = temperature;
-            this.max_completion_tokens = maxCompletionTokens;
+            this.max_tokens = maxTokens;
             this.top_p = top_p;
             this.frequency_penalty = frequency_penalty;
             this.presence_penalty = presence_penalty;
         }
 
         public ChatRequest(string modelName, List<ChatMessage> messages,
-            float temperature, int maxCompletionTokens)
+            float temperature, int maxTokens)
         {
             this.model = modelName;
             this.messages = messages;
             this.temperature = temperature;
-            this.max_completion_tokens = maxCompletionTokens;
+            this.max_tokens = maxTokens;
             this.top_p = 1;
             this.frequency_penalty = 0;
             this.presence_penalty = 0;
@@ -170,6 +167,7 @@ namespace Sanat.ApiOpenAI
     {
         public string role;
         public string content;
+        //public ToolCalls[] tool_calls;
 
         public ChatMessage(string role, string content)
         {
@@ -177,15 +175,26 @@ namespace Sanat.ApiOpenAI
             this.content = content;
         }
     }
+    
+    [Serializable]
+    public class ToolCalls
+    {
+        public string id;
+        public Function function;
+        public string type;
+    }
+    
+    [Serializable]
+    public class Function
+    {
+        public string arguments;
+        public string name;
+    }
 
     [Serializable]
     public class ChatResponse
     {
-        public string id;
-        public string @object;
-        public int created;
-        public string model;
-        public ChatChoice[] choices;
+        public Choice[] choices;
         public Usage usage;
     }
 
@@ -271,37 +280,4 @@ namespace Sanat.ApiOpenAI
 
     #endregion
 
-    #region Embeddings
-
-    [System.Serializable]
-    public class EmbeddingRequest
-    {
-        public string input;
-        public string model;
-
-        public EmbeddingRequest(string input, string model)
-        {
-            this.input = input;
-            this.model = model;
-        }
-    }
-
-    [System.Serializable]
-    public class EmbeddingResponse
-    {
-        public string Object;
-        public List<EmbeddingData> data;
-        public string model;
-        public Usage usage;
-    }
-
-    [System.Serializable]
-    public class EmbeddingData
-    {
-        public string Object;
-        public int index;
-        public List<float> embedding;
-    }
-
-    #endregion
 }
