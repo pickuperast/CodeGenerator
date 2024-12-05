@@ -243,7 +243,7 @@ namespace Sanat.CodeGenerator.Agents
                 Apikeys.antrophic,
                 model,
                 temp,
-                4000,
+                model.MaxOutputTokens,
                 messages,
                 onComplete
             );

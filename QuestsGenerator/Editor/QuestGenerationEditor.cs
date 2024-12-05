@@ -1,6 +1,7 @@
 // Assets\Sanat\CodeGenerator\Editor\QuestGenerationEditor.cs:
 using System;
 using System.Collections.Generic;
+using Newtonsoft.Json;
 using UnityEngine;
 using UnityEditor;
 using Sanat.CodeGenerator.Agents;
@@ -10,9 +11,9 @@ namespace Sanat.CodeGenerator
 {
     public class QuestGenerationEditor : EditorWindow
     {
-        private GeneratedItemsHolder generatedItemsHolder;
+        public static GeneratedItemsHolder generatedItemsHolder;
         private ComfyUIImageProcessor comfyUIImageProcessor;
-        private string itemsDefinitionsSaveFolder = "Assets/-ZombieRoyale/Generated/GeneratedItems";
+        public static string itemsDefinitionsSaveFolder = "Assets/-ZombieRoyale/Generated/GeneratedItems";
         private string itemsIconsDefinitionsSaveFolder = "Assets/-ZombieRoyale/Generated/GeneratedItems/Icons";
         private string promptDescription = "";
         private Vector2 scrollPosition;
@@ -22,23 +23,29 @@ namespace Sanat.CodeGenerator
         private float generateCooldownTime = 5f;
         private float generateCooldownTimer = 0f;
         private AbstractAgentHandler.ApiKeys _apiKeys;
-        private const string GeneratedItemsHolderKey = "GeneratedItemsHolder";
-
+        private const string GeneratedItemsHolderGuidKey = "GeneratedItemsHolderGuid";
+        private const string ItemsDefinitionsSaveFolderKey = "ItemsDefinitionsSaveFolder";
+        
         private void OnEnable()
         {
-            codeGeneratorWindow = EditorWindow.GetWindow<CodeGenerator>();
-            _apiKeys = new AbstractAgentHandler.ApiKeys(
-                codeGeneratorWindow.openaiApiKey,
-                codeGeneratorWindow.antrophicApiKey, 
-                codeGeneratorWindow.groqApiKey, 
-                codeGeneratorWindow.geminiApiKey);
-            LoadGeneratedItemsHolder();
+            codeGeneratorWindow = (CodeGenerator)EditorWindow.GetWindow(typeof(CodeGenerator), false, "", false);
+    
+            if (codeGeneratorWindow != null)
+            {
+                _apiKeys = new AbstractAgentHandler.ApiKeys(
+                    codeGeneratorWindow.openaiApiKey,
+                    codeGeneratorWindow.antrophicApiKey, 
+                    codeGeneratorWindow.groqApiKey, 
+                    codeGeneratorWindow.geminiApiKey);
+            }
+    
+            LoadFromEditorPrefs();
             EditorApplication.update += UpdateCooldown;
         }
 
         private void OnDisable()
         {
-            SaveGeneratedItemsHolder();
+            SaveToEditorPrefs();
             EditorApplication.update -= UpdateCooldown;
         }
         
@@ -57,8 +64,19 @@ namespace Sanat.CodeGenerator
             }
             GUILayout.Label("Quest Generation", EditorStyles.boldLabel);
             
-            generatedItemsHolder = EditorGUILayout.ObjectField("Generated Items Holder", generatedItemsHolder, typeof(GeneratedItemsHolder), false) as GeneratedItemsHolder;
-            itemsDefinitionsSaveFolder = EditorGUILayout.TextField("Items Definitions Save Folder", itemsDefinitionsSaveFolder);
+            GeneratedItemsHolder newHolder = EditorGUILayout.ObjectField("Generated Items Holder", generatedItemsHolder, typeof(GeneratedItemsHolder), false) as GeneratedItemsHolder;
+            if (newHolder != generatedItemsHolder)
+            {
+                generatedItemsHolder = newHolder;
+                SaveToEditorPrefs();
+            }
+
+            string newFolder = EditorGUILayout.TextField("Items Definitions Save Folder", itemsDefinitionsSaveFolder);
+            if (newFolder != itemsDefinitionsSaveFolder)
+            {
+                itemsDefinitionsSaveFolder = newFolder;
+                SaveToEditorPrefs();
+            }
             comfyUIImageProcessor = EditorGUILayout.ObjectField("Comfy UI Image Processor", comfyUIImageProcessor, typeof(ComfyUIImageProcessor), false) as ComfyUIImageProcessor;
             GUILayout.BeginHorizontal();
             fromTo = EditorGUILayout.Vector2IntField("From To (items index)", fromTo);
@@ -77,28 +95,25 @@ namespace Sanat.CodeGenerator
             if (GUILayout.Button("Generate Items"))
             {
                 GenerateItems();
-                StartCooldown();
             }
             if (GUILayout.Button("Generate Icon Prompts for Items"))
             {
                 GenerateIconsPrompts();
-                StartCooldown();
             }
             if (GUILayout.Button("Generate Icon for Items"))
             {
                 GenerateIcons();
-                StartCooldown();
             }
             if (GUILayout.Button("Generate Quest Giver And quest Description"))
             {
                 GenerateQuestGiverAndQuestDescription();
-                StartCooldown();
             }
             EditorGUI.EndDisabledGroup();
         }
 
         private void GenerateQuestGiverAndQuestDescription()
         {
+            StartCooldown();
             Vector2Int fromToStored = fromTo;
             int stepSize = 3;
             if (fromToStored.y - fromToStored.x > stepSize) {
@@ -132,10 +147,12 @@ namespace Sanat.CodeGenerator
 
         private void GenerateIcons()
         {
+            StartCooldown();
             ComfyUIImageProcessor.GenerateImageWithComfyUI("llama on grass", "icons_generator_api", itemsIconsDefinitionsSaveFolder);
         }
 
         private void GenerateIconsPrompts() {
+            StartCooldown();
             Vector2Int fromToStored = fromTo;
             if (fromToStored.y - fromToStored.x > 50) {
                 Debug.Log($"Generating in batches of 50. Total requests: {(fromToStored.y - fromToStored.x) / 50 + 1}");
@@ -215,12 +232,12 @@ namespace Sanat.CodeGenerator
 
         private void GenerateItems()
         {
+            StartCooldown();
             AgentItemsGenerator agentItemsGenerator = new AgentItemsGenerator(_apiKeys, promptDescription, GetAlreadyExistingItems());
             
             agentItemsGenerator.OnComplete = (result) =>
             {
                 Debug.Log($"Items generated: {result}");
-                GenerateItemsFromResult(result);
             };
             agentItemsGenerator.Handle("");
         }
@@ -249,7 +266,7 @@ namespace Sanat.CodeGenerator
                 {
                     generatedItemsHolder.GeneratedItems[currentIndex].QuestGiverName = ClearNameFromUselessChars(items[i]);
                     generatedItemsHolder.GeneratedItems[currentIndex].QuestGiverIdentity = int.TryParse(items[i + 1], out int amount) ? amount : 1;
-                    generatedItemsHolder.GeneratedItems[currentIndex].QusetGiverFaction = items[i + 2].Replace("\"", "");
+                    generatedItemsHolder.GeneratedItems[currentIndex].QuestGiverFaction = items[i + 2].Replace("\"", "");
                     generatedItemsHolder.GeneratedItems[currentIndex].QuestDescription = items[i + 3].Replace("\"", "");
                     EditorUtility.SetDirty(generatedItemsHolder.GeneratedItems[currentIndex]);
                 }
@@ -291,48 +308,25 @@ namespace Sanat.CodeGenerator
             Debug.Log($"{itemsToChange.Count} prompts inserted from {fromToStored.x} - {fromToStored.y}");
         }
 
-        private void GenerateItemsFromResult(string result)
-        {
-            string[] items = result.Split(';');
-            
-            try
-            {
-                AssetDatabase.StartAssetEditing();
-
-                for (int i = 0; i < items.Length; i += 3)
-                {
-                    GeneratedItemDefinition newItem = CreateInstance<GeneratedItemDefinition>();
-                    newItem.ItemName = ClearNameFromUselessChars(items[i]);
-                    newItem.AmountRequired = int.TryParse(items[i + 1], out int amount) ? amount : 1;
-                    newItem.ItemDescription = items[i + 2].Replace("\"", "");
-                
-                    string fileName = newItem.ItemName.Replace(" ", "_");
-                    string assetPath = $"{itemsDefinitionsSaveFolder}/GeneratedItem_{fileName}_{newItem.AmountRequired}.asset";
-                    AssetDatabase.CreateAsset(newItem, assetPath);
-                    AssetDatabase.SaveAssets();
-
-                    if (generatedItemsHolder != null)
-                    {
-                        generatedItemsHolder.GeneratedItems.Add(newItem);
-                        EditorUtility.SetDirty(generatedItemsHolder);
-                    }
-                }
-            }
-            finally
-            {
-                AssetDatabase.StopAssetEditing();
-            }
-        }
+        
 
         private string GetAlreadyExistingItems()
         {
-            string existingItems = String.Empty;
+            List<GeneratedItemDefinition.RelevantInfoForNextGeneration> existingItems =
+                new ();
             foreach (GeneratedItemDefinition item in generatedItemsHolder.GeneratedItems)
             {
-                existingItems += item.ItemName + ";";
+                existingItems.Add(new GeneratedItemDefinition.RelevantInfoForNextGeneration
+                {
+                    ItemName = item.ItemName,
+                    QuestGiverName = item.QuestGiverName,
+                    QuestGiverIdentity = item.QuestGiverIdentity,
+                    QuestGiverFaction = item.QuestGiverFaction,
+                    QuestDescription = item.QuestDescription
+                });
             }
-
-            return existingItems;
+            string result = JsonConvert.SerializeObject(existingItems);
+            return result;
         }
 
         private string ClearNameFromUselessChars(string item)
@@ -367,23 +361,32 @@ namespace Sanat.CodeGenerator
             generateCooldownTimer = generateCooldownTime;
         }
         
-        private void SaveGeneratedItemsHolder()
+        private void SaveToEditorPrefs()
         {
             if (generatedItemsHolder != null)
             {
-                // string json = JsonUtility.ToJson(generatedItemsHolder);
-                // PlayerPrefs.SetString(GeneratedItemsHolderKey, json);
-                // PlayerPrefs.Save();
+                string guid = AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(generatedItemsHolder));
+                EditorPrefs.SetString(GeneratedItemsHolderGuidKey, guid);
             }
+            EditorPrefs.SetString(ItemsDefinitionsSaveFolderKey, itemsDefinitionsSaveFolder);
         }
 
-        private void LoadGeneratedItemsHolder()
+        private void LoadFromEditorPrefs()
         {
-            // if (PlayerPrefs.HasKey(GeneratedItemsHolderKey))
-            // {
-            //     string json = PlayerPrefs.GetString(GeneratedItemsHolderKey);
-            //     generatedItemsHolder = JsonUtility.FromJson<GeneratedItemsHolder>(json);
-            // }
+            if (EditorPrefs.HasKey(GeneratedItemsHolderGuidKey))
+            {
+                string guid = EditorPrefs.GetString(GeneratedItemsHolderGuidKey);
+                string path = AssetDatabase.GUIDToAssetPath(guid);
+                if (!string.IsNullOrEmpty(path))
+                {
+                    generatedItemsHolder = AssetDatabase.LoadAssetAtPath<GeneratedItemsHolder>(path);
+                }
+            }
+
+            if (EditorPrefs.HasKey(ItemsDefinitionsSaveFolderKey))
+            {
+                itemsDefinitionsSaveFolder = EditorPrefs.GetString(ItemsDefinitionsSaveFolderKey);
+            }
         }
     }
 }

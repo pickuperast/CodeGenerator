@@ -7,11 +7,12 @@ VALID (1) code should be:
 -full
 -contain all parts to accomplish the task
 -may contain several code files, but they should have full code and path included like in examples.
+-contain path to script file. Except circumstances when we clearly do not see code parts that are not changed.
 
 DO NOT check the logic of the code
 CHECK if the code have missing, skipped parts
 INVALID (0) code should have skipped code parts.
-INVALID (0) code may contain phrases like "other code remains unchanged", "other code remains the same", "rest of the code remains unchanged", "previous code remains unchanged" or something similar to that.
+INVALID (0) code may contain phrases like "other code remains unchanged", "other code remains the same", "rest of the code remains unchanged", "previous code remains unchanged", "... existing code ..." or something similar to that.
 If provided solution is full, you should say: "1".
 If provided solution is not full, you should say: "0".
 

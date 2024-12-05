@@ -278,21 +278,25 @@ namespace Sanat.CodeGenerator
                     if (_currentRun == 2)
                     {
                         UpdateProgress(0.4f);
-                        Debug.Log($"Current run: {_currentRun}; model: {Sanat.ApiAnthropic.Model.Claude35Latest}");
+                        //Debug.Log($"Current run: {_currentRun}; model: {Sanat.ApiAnthropic.Model.Claude35Latest}");
+                        Debug.Log($"Current run: {_currentRun}; model: {ApiGeminiModels.Pro}");
+                        agentCodeArchitector.ChangeLLM(AbstractAgentHandler.ApiProviders.Gemini, ApiGeminiModels.Pro);
                         //Debug.Log($"Current run: {_currentRun}; model: {Model.GPT4o_16K.Name}");
                         //agentCodeArchitector.ChangeLLM(AbstractAgentHandler.ApiProviders.OpenAI, Model.GPT4o_16K.Name);
                     }else if (_currentRun == 3)
                     {
                         UpdateProgress(0.6f); 
-                        Debug.Log($"Current run: {_currentRun}; model: {Sanat.ApiAnthropic.Model.Claude35Latest}");
-                        //Debug.Log($"Current run: {_currentRun}; model: {ApiGeminiModels.Pro}");
-                        //agentCodeArchitector.ChangeLLM(AbstractAgentHandler.ApiProviders.Gemini, ApiGeminiModels.Pro);
+                        //Debug.Log($"Current run: {_currentRun}; model: {Sanat.ApiAnthropic.Model.Claude35Latest}");
+                        Debug.Log($"Current run: {_currentRun}; model: {Model.GPT4o1mini.Name}");
+                        agentCodeArchitector.ChangeLLM(AbstractAgentHandler.ApiProviders.OpenAI, Model.GPT4o1mini.Name);
                     }else if (_currentRun == 4)
                     {
                         UpdateProgress(0.8f); 
                         Debug.Log($"Current run: {_currentRun}; model: {Model.GPT4o1mini.Name}");
                         agentCodeArchitector.ChangeLLM(AbstractAgentHandler.ApiProviders.OpenAI, Model.GPT4o1mini.Name);
                     }
+                    
+                    
                     agentCodeArchitector.WorkWithFeedback(validationResult, result, (string feedbackResult) =>
                     {
                         Debug.Log($"Feedback result: {feedbackResult}");
@@ -562,9 +566,10 @@ namespace Sanat.CodeGenerator
             string ignoreConfPath = Path.Combine(assetsParentPath, "ignore.conf");
             string folderPathToAdd = Environment.NewLine + "/Assets/" + PROMPTS_SAVE_FOLDER + Environment.NewLine;
             string resultsPathToAdd = Environment.NewLine + "/Assets/" + AbstractAgentHandler.RESULTS_SAVE_FOLDER + Environment.NewLine;
+            string backupsPathToAdd = Environment.NewLine + "/" + BackupManager.BACKUP_ROOT + "/" + BackupManager.BACKUP_FOLDER_NAME + Environment.NewLine;
             if (File.Exists(gitignorePath))
             {
-                if (RequiredExclusionsExist(gitignorePath, folderPathToAdd, resultsPathToAdd))
+                if (RequiredExclusionsExist(gitignorePath, folderPathToAdd, resultsPathToAdd, backupsPathToAdd))
                 {
                     return;
                 }
@@ -573,7 +578,7 @@ namespace Sanat.CodeGenerator
             }
             if (File.Exists(ignoreConfPath))
             {
-                if (RequiredExclusionsExist(ignoreConfPath, folderPathToAdd, resultsPathToAdd))
+                if (RequiredExclusionsExist(ignoreConfPath, folderPathToAdd, resultsPathToAdd, backupsPathToAdd))
                 {
                     return;
                 }
@@ -582,10 +587,10 @@ namespace Sanat.CodeGenerator
             }
         }
 
-        private bool RequiredExclusionsExist(string gitignorePath, string folderPathToAdd, string resultsPathToAdd)
+        private bool RequiredExclusionsExist(string gitignorePath, string folderPathToAdd, string resultsPathToAdd, string backupsPathToAdd)
         {
             string gitignoreContents = File.ReadAllText(gitignorePath);
-            if (gitignoreContents.Contains(folderPathToAdd) && gitignoreContents.Contains(resultsPathToAdd))
+            if (gitignoreContents.Contains(folderPathToAdd) && gitignoreContents.Contains(resultsPathToAdd) && gitignoreContents.Contains(backupsPathToAdd))
             {
                 return true;
             }

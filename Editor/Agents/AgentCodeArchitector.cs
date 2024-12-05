@@ -54,7 +54,7 @@ namespace Sanat.CodeGenerator.Agents
             BotParameters botParameters = new BotParameters(_prompt, SelectedApiProvider, Temperature, delegate(string result)
             {
                 Debug.Log($"<color=purple>{Name}</color> result: {result}");
-                if (result.Contains("HTTP/1.1 404"))
+                if (result.Contains("HTTP/1.1 404") || result.Contains("HTTP/1.1 529"))
                 {
                     Debug.LogError($"<color=purple>{Name}</color>: Stop");
                     return;

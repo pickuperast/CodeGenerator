@@ -10,6 +10,8 @@ using System.Text.RegularExpressions;
 using Sanat.ApiGemini;
 using Sanat.ApiGroq;
 using Sanat.ApiOpenAI;
+using Sanat.CodeGenerator;
+using Sanat.CodeGenerator.Editor;
 
 namespace Sanat.CodeGenerator.Agents
 {
@@ -128,6 +130,7 @@ namespace Sanat.CodeGenerator.Agents
 		protected void GetFilePath(string solutionInput, Action<string> callback)
 		{
 			string promptLocation = Application.dataPath + $"{PROMPTS_FOLDER_PATH}{PROMPT_FILE_PATH_EXTRACT}";
+			string agentLogName = $"<color=cyan>{Name}</color>";
 			string question = solutionInput;
 			_modelName = Model.GPT4omini.Name;//ApiGroqModels.Llama3_70b_8192_tool.Name;
 			BotParameters botParameters = new BotParameters(question, ApiProviders.OpenAI, .2f, callback, _modelName, true);
@@ -137,16 +140,28 @@ namespace Sanat.CodeGenerator.Agents
 			botParameters.systemMessage = LoadPrompt(promptLocation);
 			botParameters.onOpenaiChatResponseComplete += (response) =>
 			{
-				Debug.Log($"<color=cyan>{Name}</color> GetFilePath Result: {response}");
+				Debug.Log($"{agentLogName} GetFilePath Result: {response}");
 				if (response.choices[0].finish_reason == "tool_calls")
 				{
 					OpenAI.ToolCalls[] toolCalls = response.choices[0].message.tool_calls;
-					for (int i = 0; i < toolCalls.Length; i++)
+					int filesAmount = toolCalls.Length;
+					FileContent[] fileContents = new FileContent[filesAmount];
+					string logFileNames = $"<color=cyan>{Name}</color>: ";
+					for (int i = 0; i < filesAmount; i++)
 					{
-						Debug.Log($"<color=cyan>{Name}</color> function name: {toolCalls[i].function.name}");
-						Debug.Log($"<color=cyan>{Name}</color> function args: {toolCalls[i].function.arguments}");
-						FileContent newQuestData = JsonConvert.DeserializeObject<FileContent>(toolCalls[i].function.arguments);
-						DirectInsertion(newQuestData.FilePath, newQuestData.Content);
+						fileContents[i] = JsonConvert.DeserializeObject<FileContent>(toolCalls[i].function.arguments);
+						logFileNames += $"{fileContents[i].FilePath}, ";
+						if (i == filesAmount - 1)
+						{
+							logFileNames = logFileNames.Remove(logFileNames.Length - 2);
+						}
+					}
+					
+					Debug.Log(logFileNames);
+					for (int i = 0; i < filesAmount; i++)
+					{
+						Debug.Log($"{agentLogName} Writing file: {fileContents[i].FilePath}");
+						DirectInsertion(fileContents[i].FilePath, fileContents[i].Content);
 					}
 				}
 			};
@@ -256,6 +271,11 @@ namespace Sanat.CodeGenerator.Agents
 			SaveResultToFile(code);
 			filePath = filePath.Replace(":", string.Empty);
 			CompareAndFixFilePath(ref filePath);
+			if (File.Exists(filePath))
+			{
+				string originalContent = File.ReadAllText(filePath);
+				BackupManager.BackupScriptFile(filePath, originalContent);
+			}
 			
 			var match = Regex.Match(code, @"```csharp\s*([\s\S]*?)```");
 			if (match.Success)
@@ -301,6 +321,7 @@ namespace Sanat.CodeGenerator.Agents
 			File.SetAttributes(filePath, FileAttributes.Normal);
 			File.WriteAllText(filePath, code, Encoding.UTF8);
 			OnComplete?.Invoke(code);
+			CodeGeneratorFileOpener.OpenScript(filePath);
 			Debug.Log($"<color=cyan>{Name}</color> <color=green>COMPLETED!</color> [{filePath}] Direct insertion:\n{code}");
 		}
 

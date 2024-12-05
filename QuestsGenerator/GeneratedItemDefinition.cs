@@ -1,7 +1,4 @@
-using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.Serialization;
 
 [CreateAssetMenu(fileName = "GeneratedItemDefinition", menuName = "ScriptableObjects/GeneratedItemDefinition", order = 1)]
 public class GeneratedItemDefinition : ScriptableObject
@@ -12,9 +9,30 @@ public class GeneratedItemDefinition : ScriptableObject
     public string ItemDescription;
     public string QuestGiverName;
     public int QuestGiverIdentity;
-    public string QusetGiverFaction;
+    public string QuestGiverFaction;
     public string QuestDescription;
     public string IconPrompt;
+
+    public struct RelevantInfoForNextGeneration
+    {
+        public string ItemName;
+        public string QuestGiverName;
+        public int QuestGiverIdentity;
+        public string QuestGiverFaction;
+        public string QuestDescription;
+    }
+
+    public void FillValues(GeneratedItemDefinition data)
+    {
+        ItemName = data.ItemName;
+        AmountRequired = data.AmountRequired;
+        ItemDescription = data.ItemDescription;
+        QuestGiverName = data.QuestGiverName;
+        QuestGiverIdentity = data.QuestGiverIdentity;
+        QuestGiverFaction = data.QuestGiverFaction;
+        QuestDescription = data.QuestDescription;
+        IconPrompt = data.IconPrompt;
+    }
     
     public struct AddNewQuestData
     {
@@ -31,7 +49,7 @@ public class GeneratedItemDefinition : ScriptableObject
     
     public string GetQuestDescription()
     {
-        return $"{GetNameDescriptionAmount()};{QuestGiverName};{QuestGiverIdentity};{QusetGiverFaction};{QuestDescription}";
+        return $"{GetNameDescriptionAmount()};{QuestGiverName};{QuestGiverIdentity};{QuestGiverFaction};{QuestDescription}";
     }
     public bool IsItemInvalid()
     {
@@ -59,7 +77,7 @@ public class GeneratedItemDefinition : ScriptableObject
             return false;
         if (string.IsNullOrEmpty(QuestGiverName))
             return false;
-        if (string.IsNullOrEmpty(QusetGiverFaction))
+        if (string.IsNullOrEmpty(QuestGiverFaction))
             return false;
         if (string.IsNullOrEmpty(QuestDescription))
             return false;

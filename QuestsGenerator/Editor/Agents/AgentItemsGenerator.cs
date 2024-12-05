@@ -1,7 +1,9 @@
 ﻿// Copyright (c) Sanat. All rights reserved.
 using System;
+using Newtonsoft.Json;
 using Sanat.ApiGemini;
 using Sanat.ApiOpenAI;
+using UnityEditor;
 using UnityEngine;
 
 namespace Sanat.CodeGenerator.Agents
@@ -11,7 +13,7 @@ namespace Sanat.CodeGenerator.Agents
         private string _prompt;
 
         protected override string PromptFilename() => "PromptGenerateRpgItems.md";
-        protected override Model GetModel() => Model.GPT4o_16K;
+        protected override Model GetModel() => Model.GPT4omini;
         protected override string GetGeminiModel() => ApiGeminiModels.Pro;
         private const string LOCAL_PROMPTS_FOLDER_PATH = "/Sanat/CodeGenerator/QuestsGenerator/Editor/Prompts/";
         
@@ -19,7 +21,7 @@ namespace Sanat.CodeGenerator.Agents
         {
             Name = "AgentItemNamesGenerator";
             Description = "Generates items";
-            Temperature = .7f;
+            Temperature = 1.0f;
             StoreKeys(apiKeys);
             string promptLocation = Application.dataPath + $"{LOCAL_PROMPTS_FOLDER_PATH}{PromptFilename()}";
             Instructions = LoadPrompt(promptLocation);
@@ -27,17 +29,92 @@ namespace Sanat.CodeGenerator.Agents
                 alreadyExistingItems = "# Already existing items: " + alreadyExistingItems;
             _prompt = $"{Instructions} # TASK: {task}. " + alreadyExistingItems;
             SelectedApiProvider = ApiProviders.OpenAI;
+            _modelName = GetModel().Name;
+        }
+        
+        protected OpenAI.ToolFunction GetFunctionData_OpenaiSplitCodeToFilePathes()
+        {
+            string description = "Inserts new items into the file.";
+            string name = "InsertNewItem";
+            string propertyItemName = "ItemName";
+            string propertyItemDescription = "ItemDescription";
+            string propertyQuestGiverName = "QuestGiverName";
+            string propertyQuestGiverIdentity = "QuestGiverIdentity";
+            string propertyQuestGiverFaction = "QusetGiverFaction";
+            string propertyQuestDescription = "QuestDescription";
+            string propertyIconPrompt = "IconPrompt";
+            string propertyAmountRequired = "AmountRequired";
+            var strType = OpenAI.DataTypes.STRING;
+
+            OpenAI.Parameter parameters = new ();
+            parameters.AddProperty(propertyItemName, strType, $"AI must generate item name");
+            parameters.AddProperty(propertyItemDescription, strType, $"AI must provide FULL item description");
+            parameters.AddProperty(propertyQuestGiverName, strType, $"AI must generate quest giver name that can give such item");
+            parameters.AddProperty(propertyQuestGiverIdentity, OpenAI.DataTypes.NUMBER, $"AI must generate quest giver identity 0=Male, 1=Female");
+            parameters.AddProperty(propertyQuestGiverFaction, strType, $"AI must generate quest giver faction");
+            parameters.AddProperty(propertyAmountRequired, OpenAI.DataTypes.NUMBER, $"AI must generate how many items player should bring to fulfill the quest");
+            parameters.AddProperty(propertyQuestDescription, strType, $"AI must generate quest description");
+            parameters.AddProperty(propertyIconPrompt, strType, $"AI must generate icon prompt");
+            parameters.Required.Add(propertyItemName);
+            parameters.Required.Add(propertyItemDescription);
+            parameters.Required.Add(propertyQuestGiverName);
+            parameters.Required.Add(propertyQuestGiverIdentity);
+            parameters.Required.Add(propertyQuestGiverFaction);
+            parameters.Required.Add(propertyAmountRequired);
+            parameters.Required.Add(propertyQuestDescription);
+            parameters.Required.Add(propertyIconPrompt);
+            OpenAI.ToolFunction function = new OpenAI.ToolFunction(name, description, parameters);
+            return function;
+        }
+        
+        private void GenerateItemsFromResult(OpenAI.ToolCalls[] toolCallsArray)
+        {
+            try
+            {
+                AssetDatabase.StartAssetEditing();
+                int filesAmount = toolCallsArray.Length;
+                GeneratedItemDefinition[] items = new GeneratedItemDefinition[filesAmount];
+                for (int i = 0; i < filesAmount; i++)
+                {
+                    items[i] = JsonConvert.DeserializeObject<GeneratedItemDefinition>(toolCallsArray[i].function.arguments);
+                    GeneratedItemDefinition newItem = ScriptableObject.CreateInstance<GeneratedItemDefinition>();
+                    newItem.FillValues(items[i]);
+                    
+                
+                    string fileName = newItem.ItemName.Replace(" ", "_");
+                    string assetPath = $"{QuestGenerationEditor.itemsDefinitionsSaveFolder}/GeneratedItem_{fileName}_{newItem.AmountRequired}.asset";
+                    AssetDatabase.CreateAsset(newItem, assetPath);
+                    AssetDatabase.SaveAssets();
+
+                    if (QuestGenerationEditor.generatedItemsHolder != null)
+                    {
+                        QuestGenerationEditor.generatedItemsHolder.GeneratedItems.Add(newItem);
+                        EditorUtility.SetDirty(QuestGenerationEditor.generatedItemsHolder);
+                    }
+                }
+            }
+            finally
+            {
+                AssetDatabase.StopAssetEditing();
+            }
         }
 
         public override void Handle(string input)
         {
             Debug.Log($"<color=purple>{Name}</color> asking: {_prompt}");
-            BotParameters botParameters = new BotParameters(_prompt, SelectedApiProvider, Temperature, delegate(string result)
+            BotParameters botParameters = new BotParameters(_prompt, SelectedApiProvider, Temperature, null, _modelName, true);
+            var openaiTools = new OpenAI.Tool[] { new ("function", GetFunctionData_OpenaiSplitCodeToFilePathes()) };
+            botParameters.openaiTools = openaiTools;
+            botParameters.systemMessage = Instructions;
+            botParameters.isToolUse = true;
+            botParameters.onOpenaiChatResponseComplete += (response) =>
             {
-                Debug.Log($"<color=purple>{Name}</color> result: {result}");
-                OnComplete?.Invoke(result);
-                SaveResultToFile(result);
-            });
+                if (response.choices[0].finish_reason == "tool_calls")
+                {
+                    GenerateItemsFromResult(response.choices[0].message.tool_calls);
+                }
+            };
+            
             AskBot(botParameters);
         }
     }
