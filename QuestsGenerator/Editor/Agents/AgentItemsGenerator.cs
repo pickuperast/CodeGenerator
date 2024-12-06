@@ -32,7 +32,7 @@ namespace Sanat.CodeGenerator.Agents
             _modelName = GetModel().Name;
         }
         
-        protected OpenAI.ToolFunction GetFunctionData_OpenaiSplitCodeToFilePathes()
+        protected ToolFunction GetFunctionData_OpenaiSplitCodeToFilePathes()
         {
             string description = "Inserts new items into the file.";
             string name = "InsertNewItem";
@@ -44,15 +44,15 @@ namespace Sanat.CodeGenerator.Agents
             string propertyQuestDescription = "QuestDescription";
             string propertyIconPrompt = "IconPrompt";
             string propertyAmountRequired = "AmountRequired";
-            var strType = OpenAI.DataTypes.STRING;
+            var strType = DataTypes.STRING;
 
-            OpenAI.Parameter parameters = new ();
+            Parameter parameters = new ();
             parameters.AddProperty(propertyItemName, strType, $"AI must generate item name");
             parameters.AddProperty(propertyItemDescription, strType, $"AI must provide FULL item description");
             parameters.AddProperty(propertyQuestGiverName, strType, $"AI must generate quest giver name that can give such item");
-            parameters.AddProperty(propertyQuestGiverIdentity, OpenAI.DataTypes.NUMBER, $"AI must generate quest giver identity 0=Male, 1=Female");
+            parameters.AddProperty(propertyQuestGiverIdentity, DataTypes.NUMBER, $"AI must generate quest giver identity 0=Male, 1=Female");
             parameters.AddProperty(propertyQuestGiverFaction, strType, $"AI must generate quest giver faction");
-            parameters.AddProperty(propertyAmountRequired, OpenAI.DataTypes.NUMBER, $"AI must generate how many items player should bring to fulfill the quest");
+            parameters.AddProperty(propertyAmountRequired, DataTypes.NUMBER, $"AI must generate how many items player should bring to fulfill the quest");
             parameters.AddProperty(propertyQuestDescription, strType, $"AI must generate quest description");
             parameters.AddProperty(propertyIconPrompt, strType, $"AI must generate icon prompt");
             parameters.Required.Add(propertyItemName);
@@ -63,11 +63,11 @@ namespace Sanat.CodeGenerator.Agents
             parameters.Required.Add(propertyAmountRequired);
             parameters.Required.Add(propertyQuestDescription);
             parameters.Required.Add(propertyIconPrompt);
-            OpenAI.ToolFunction function = new OpenAI.ToolFunction(name, description, parameters);
+            ToolFunction function = new ToolFunction(name, description, parameters);
             return function;
         }
         
-        private void GenerateItemsFromResult(OpenAI.ToolCalls[] toolCallsArray)
+        private void GenerateItemsFromResult(ToolCalls[] toolCallsArray)
         {
             try
             {
@@ -103,7 +103,7 @@ namespace Sanat.CodeGenerator.Agents
         {
             Debug.Log($"<color=purple>{Name}</color> asking: {_prompt}");
             BotParameters botParameters = new BotParameters(_prompt, SelectedApiProvider, Temperature, null, _modelName, true);
-            var openaiTools = new OpenAI.Tool[] { new ("function", GetFunctionData_OpenaiSplitCodeToFilePathes()) };
+            var openaiTools = new ApiOpenAI.Tool[] { new ("function", GetFunctionData_OpenaiSplitCodeToFilePathes()) };
             botParameters.openaiTools = openaiTools;
             botParameters.systemMessage = Instructions;
             botParameters.isToolUse = true;

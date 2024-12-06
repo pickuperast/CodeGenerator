@@ -16,18 +16,18 @@ namespace Sanat.CodeGenerator.Agents
         protected override string GetGeminiModel() => ApiGeminiModels.Pro;
         private const string LOCAL_PROMPTS_FOLDER_PATH = "/Sanat/CodeGenerator/QuestsGenerator/Editor/Prompts/";
         
-        private OpenAI.ToolFunction GetFunctionData_AddNewQuest()
+        private ToolFunction GetFunctionData_AddNewQuest()
         {
             string description = "Add new quest to the quest list.";
             string name = "AddNewQuest";
 
-            OpenAI.Parameter parameters = new ();
-            parameters.AddProperty("quest_giver_name", OpenAI.DataTypes.STRING, "The name of the quest giving subject");
-            parameters.AddProperty("quest_giver_identity", OpenAI.DataTypes.NUMBER, "identity of quest giver. 0 - Male, 1 - Female");
-            parameters.AddProperty("quest_giver_faction", OpenAI.DataTypes.STRING, "Faction in which quest giver is belong.");
-            parameters.AddProperty("quest_description", OpenAI.DataTypes.STRING, "Description text of the quest, that will be shown to the player.");
+            Parameter parameters = new ();
+            parameters.AddProperty("quest_giver_name", DataTypes.STRING, "The name of the quest giving subject");
+            parameters.AddProperty("quest_giver_identity", DataTypes.NUMBER, "identity of quest giver. 0 - Male, 1 - Female");
+            parameters.AddProperty("quest_giver_faction", DataTypes.STRING, "Faction in which quest giver is belong.");
+            parameters.AddProperty("quest_description", DataTypes.STRING, "Description text of the quest, that will be shown to the player.");
 
-            OpenAI.ToolFunction function = new OpenAI.ToolFunction(name, description, parameters);
+            ToolFunction function = new ToolFunction(name, description, parameters);
             return function;
         }
         

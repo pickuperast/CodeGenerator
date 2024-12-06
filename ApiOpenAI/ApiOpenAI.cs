@@ -123,7 +123,7 @@ namespace Sanat.ApiOpenAI
         /// <param name="messages">A list of messages comprising the conversation so far.</param>
         /// <param name="callback">This event handler will be passed the API result.</param>
         public static UnityWebRequestAsyncOperation SubmitChatAsync(string apiKey, Model model, float temperature, int maxTokens,
-            List<ChatMessage> messages, Action<string> callback, OpenAI.Tool[] tools = null)
+            List<ChatMessage> messages, Action<string> callback, Tool[] tools = null)
         {
             return SubmitChatAsync(apiKey, model, temperature,
                 top_p: 1, frequency_penalty: 0, presence_penalty: 0, maxTokens, messages, callback, tools);
@@ -146,7 +146,7 @@ namespace Sanat.ApiOpenAI
             float temperature, float top_p,
             float frequency_penalty, float presence_penalty, 
             int maxTokens,
-            List<ChatMessage> messages, Action<string> callback, OpenAI.Tool[] tools = null)
+            List<ChatMessage> messages, Action<string> callback, Tool[] tools = null)
         {
             var chatRequest = new ChatRequest(model.Name, messages, 
                 temperature, top_p, frequency_penalty, presence_penalty,
@@ -195,7 +195,7 @@ namespace Sanat.ApiOpenAI
             float temperature, float top_p,
             float frequency_penalty, float presence_penalty, 
             int maxTokens,
-            List<ChatMessage> messages, Action<CompletionResponse> callback, OpenAI.Tool[] tools)
+            List<ChatMessage> messages, Action<CompletionResponse> callback, Tool[] tools)
         {
             var chatRequest = new ChatRequest(model.Name, messages, 
                 temperature, top_p, frequency_penalty, presence_penalty,
@@ -441,116 +441,6 @@ namespace Sanat.ApiOpenAI
             return webRequest;
         }
         
-        [Serializable]
-        public class FunctionCall
-        {
-            public string name;
-            public string arguments;
-        }
-        
-        [Serializable]
-        public class Tool
-        {
-            public string type;
-            public ToolFunction function;
-            
-            public Tool(string type, ToolFunction function)
-            {
-                this.type = type;
-                this.function = function;
-            }
-        }
-
-        [Serializable]
-        public class ToolFunction
-        {
-            public string name;
-            public string description;
-            public Parameter parameters;
-            
-            public ToolFunction(string name, string description, Parameter parameters)
-            {
-                this.name = name;
-                this.description = description;
-                this.parameters = parameters;
-            }
-        }
-        
-        [System.Serializable]
-        public class Parameter
-        {
-            [JsonProperty("type")]
-            public string Type { get; set; } = DataTypes.OBJECT;
-
-            [JsonProperty("properties")]
-            public Dictionary<string, Property> Properties { get; set; } = new Dictionary<string, Property>();
-
-            [JsonProperty("required")]
-            public List<string> Required { get; set; } = new List<string>();
-            
-            [JsonProperty("additionalProperties")]
-            public bool AdditionalProperties { get; set; } = false;
-
-            /// <summary>
-            /// Create parameter for the function call. 
-            /// Use AddProperty() to add more properties. 
-            /// Use DataTypes class to access data types available for propertyType
-            /// </summary>
-            public Parameter(string propertyName, string propertyType, string description)
-            {
-                Property property = new Property();
-                property.Description = description;
-                property.Type = propertyType;
-                Properties.Add(propertyName, property);
-            }
-
-            public Parameter()
-            {
-
-            }
-
-            /// <summary>
-            /// Add a Property to the parameter. 
-            /// Use DataTypes class to access data types available for propertyType
-            /// </summary>
-            /// <param name="propertyName"></param>
-            /// <param name="propertyType"></param>
-            /// <param name="description"></param>
-            public void AddProperty(string propertyName, string propertyType, string description)
-            {
-                Property property = new Property();
-                property.Description = description;
-                property.Type = propertyType;
-                Properties.Add(propertyName, property);
-            }
-        }
-
-        [System.Serializable]
-        public class Property
-        {
-            [JsonProperty("type")]
-            public string Type { get; set; }
-
-            [JsonProperty("description")]
-            public string Description { get; set; }
-
-        }
-
-        [System.Serializable]
-        public class Message
-        {
-            public string role;
-            public string content;
-            public ToolCalls[] tool_calls;
-        }
-        
-        [System.Serializable]
-        public class ToolCalls
-        {
-            public string id;
-            public string type;
-            public FunctionCall function;
-        }
         
         public enum ChatFinishReason
         {
@@ -559,14 +449,6 @@ namespace Sanat.ApiOpenAI
             ContentFilter,
             ToolCalls,
             FunctionCall
-        }
-        
-        public static class DataTypes
-        {
-            public static readonly string STRING = "string";
-            public static readonly string ARRAY = "array";
-            public static readonly string NUMBER = "number";
-            public static readonly string OBJECT = "object";
         }
     }
 

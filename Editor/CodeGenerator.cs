@@ -7,6 +7,7 @@ using System.Linq;
 using System;
 using System.Text.RegularExpressions;
 using Cysharp.Threading.Tasks;
+using Newtonsoft.Json;
 using Sanat.ApiGemini;
 using Sanat.ApiOpenAI;
 using Sanat.CodeGenerator.Agents;
@@ -59,6 +60,7 @@ namespace Sanat.CodeGenerator
         public Color buttonColor = Color.green;
 
         // Project Data
+        public Dictionary<string, string> projectCode;
         public List<string> selectedClassNames = new();
         public Dictionary<string, string> classToPath = new();
         public List<string> _ignoredFolders = new();
@@ -138,23 +140,23 @@ namespace Sanat.CodeGenerator
         #region Code Generation
         public void ExecGeneratePrompt()
         {
-            Dictionary<string, string> projectCode = _preparationHelper.PrepareProjectCode(selectedClassNames, classToPath, _ignoredFolders);
+            projectCode = _preparationHelper.PrepareProjectCode(selectedClassNames, classToPath, _ignoredFolders);
             SaveTaskToPrefs();
-            GeneratePrompt(projectCode, 3);
+            GeneratePrompt(3);
             SavePromptToFile();
             CopyPromptToClipboard();
             StartButtonAnimation();
         }
 
         private void SaveTaskToPrefs() => EditorPrefs.SetString(PREFS_KEY_TASK, taskInput);
-
+        
         public void ExecGenerateCode()
         {
-            Dictionary<string, string> projectCode = _preparationHelper.PrepareProjectCode(selectedClassNames, classToPath, _ignoredFolders);
-            InitiateGeneration(projectCode);
+            projectCode = _preparationHelper.PrepareProjectCode(selectedClassNames, classToPath, _ignoredFolders);
+            InitiateGeneration();
         }
 
-        private void InitiateGeneration(Dictionary<string, string> projectCode)
+        private void InitiateGeneration()
         {
             isGeneratingCode = true;
             _currentRun = 0;
@@ -164,7 +166,7 @@ namespace Sanat.CodeGenerator
             EditorApplication.update += UpdateProgressBar;
             SaveTaskToPrefs();
             string[] projectCodePathes = projectCode.Keys.ToArray();
-            GeneratePrompt(projectCode);
+            GeneratePrompt();
             SavePromptToFile();
             CopyPromptToClipboard();
             StartButtonAnimation();
@@ -182,17 +184,20 @@ namespace Sanat.CodeGenerator
             agentCodeArchitector.ChangeLLM(architectorSettings.ApiProvider, architectorSettings.ModelName);
     
             // Convert paths to dictionary for project code
-            Dictionary<string, string> projectCode = new Dictionary<string, string>();
+            List<AbstractAgentHandler.FileContent> projectCodeLight = new ();
             foreach(var path in projectCodePaths)
             {
                 if(File.Exists(path))
                 {
-                    projectCode[path] = File.ReadAllText(path);
+                    AbstractAgentHandler.FileContent fileContent = new ();
+                    fileContent.FilePath = path;
+                    fileContent.Content = File.ReadAllText(path);
+                    projectCodeLight.Add(fileContent);
                 }
             }
     
             var agentSolutionToDicts = new AgentSolutionToDict(apiKeys, projectCodePaths);
-            var agentCodeMerger = new AgentCodeMerger(apiKeys, projectCode); // Using the correct constructor
+            var agentCodeMerger = new AgentCodeMerger(apiKeys, projectCodeLight, projectCodePaths); // Using the correct constructor
 
             // Set up callbacks and chain
             SetupArchitectorCallbacks(agentCodeArchitector, agentCodeMerger, apiKeys, agentSolutionToDicts, includedCode);
@@ -210,11 +215,24 @@ namespace Sanat.CodeGenerator
             AbstractAgentHandler agentSolutionToDicts,
             string includedCode)
         {
+            agentCodeArchitector.OnFileContentProvided += (List<AbstractAgentHandler.FileContent> fileContents) =>
+            {
+                AgentCodeValidator agentValidator = new AgentCodeValidator(apiKeys, taskInput, classToPath, includedCode, "", agentCodeMerger as AgentCodeMerger);
+                
+                agentValidator.ValidateSolution(fileContents, (string comment) =>
+                {
+                    string architectorSolution = JsonConvert.SerializeObject(fileContents);
+                    NextStepsAfterArchitector(comment, agentCodeMerger, apiKeys, architectorSolution, 
+                        agentSolutionToDicts, agentCodeArchitector, includedCode);
+                });
+            };
+            
+            
             // Configure architect's completion handling
             agentCodeArchitector.OnComplete += (string result) =>
             {
                 // Create validator to check architect's output
-                AgentCodeValidator agentValidator = new AgentCodeValidator(apiKeys, taskInput, includedCode, result);
+                AgentCodeValidator agentValidator = new AgentCodeValidator(apiKeys, taskInput, classToPath, includedCode, result, agentCodeMerger as AgentCodeMerger);
                 
                 agentValidator.OnComplete += (string validationResult) =>
                 {
@@ -250,68 +268,58 @@ namespace Sanat.CodeGenerator
         private AbstractAgentHandler NextStepsAfterArchitector(string validationResult,
             AbstractAgentHandler agentCodeMerger, 
             AbstractAgentHandler.ApiKeys apiKeys, 
-            string result, 
+            string architectorSolution, 
             AbstractAgentHandler agentSolutionToDicts,
             AgentCodeArchitector agentCodeArchitector,
             string includedCode) 
         {
-            AgentCodeMerger agentCodeMergerDirect = agentCodeMerger as AgentCodeMerger;
-            var firstRow = validationResult.Split('\n')[0];
-            if (firstRow.Contains("1"))
+            _currentRun++;
+            if (_currentRun > MAX_ALLOWED_VALIDITY_CHECKINGS || !isGeneratingCode)
             {
-                Debug.Log($"Validation successful. Proceeding with code merging. validationResult: {validationResult}");
-                agentCodeMergerDirect.OnComplete += (string mergedCode) => { FinishGenerationActions(); };
-                agentCodeMergerDirect.InsertCode(result);
+                Debug.Log($"Max allowed validity checkings reached. validationResult: {validationResult}");
+                FinishGenerationActions();
+                return agentCodeMerger;
             }
             else
             {
-                _currentRun++;
-                if (_currentRun > MAX_ALLOWED_VALIDITY_CHECKINGS || !isGeneratingCode)
+                Debug.Log($"<color=red>Validation failed.</color> Returning to Architector. validationResult: {validationResult}");
+                if (_currentRun == 2)
                 {
-                    Debug.Log($"Max allowed validity checkings reached. validationResult: {validationResult}");
-                    FinishGenerationActions();
-                    return agentCodeMerger;
-                }
-                else
+                    UpdateProgress(0.4f);
+                    //Debug.Log($"Current run: {_currentRun}; model: {Sanat.ApiAnthropic.Model.Claude35Latest}");
+                    Debug.Log($"Current run: {_currentRun}; model: {ApiGeminiModels.Pro}");
+                    //agentCodeArchitector.ChangeLLM(AbstractAgentHandler.ApiProviders.Gemini, ApiGeminiModels.Pro);
+                    //Debug.Log($"Current run: {_currentRun}; model: {Model.GPT4o_16K.Name}");
+                    //agentCodeArchitector.ChangeLLM(AbstractAgentHandler.ApiProviders.OpenAI, Model.GPT4o_16K.Name);
+                }else if (_currentRun == 3)
                 {
-                    Debug.Log($"<color=red>Validation failed.</color> Returning to Architector. validationResult: {validationResult}");
-                    if (_currentRun == 2)
-                    {
-                        UpdateProgress(0.4f);
-                        //Debug.Log($"Current run: {_currentRun}; model: {Sanat.ApiAnthropic.Model.Claude35Latest}");
-                        Debug.Log($"Current run: {_currentRun}; model: {ApiGeminiModels.Pro}");
-                        agentCodeArchitector.ChangeLLM(AbstractAgentHandler.ApiProviders.Gemini, ApiGeminiModels.Pro);
-                        //Debug.Log($"Current run: {_currentRun}; model: {Model.GPT4o_16K.Name}");
-                        //agentCodeArchitector.ChangeLLM(AbstractAgentHandler.ApiProviders.OpenAI, Model.GPT4o_16K.Name);
-                    }else if (_currentRun == 3)
-                    {
-                        UpdateProgress(0.6f); 
-                        //Debug.Log($"Current run: {_currentRun}; model: {Sanat.ApiAnthropic.Model.Claude35Latest}");
-                        Debug.Log($"Current run: {_currentRun}; model: {Model.GPT4o1mini.Name}");
-                        agentCodeArchitector.ChangeLLM(AbstractAgentHandler.ApiProviders.OpenAI, Model.GPT4o1mini.Name);
-                    }else if (_currentRun == 4)
-                    {
-                        UpdateProgress(0.8f); 
-                        Debug.Log($"Current run: {_currentRun}; model: {Model.GPT4o1mini.Name}");
-                        agentCodeArchitector.ChangeLLM(AbstractAgentHandler.ApiProviders.OpenAI, Model.GPT4o1mini.Name);
-                    }
-                    
-                    
-                    agentCodeArchitector.WorkWithFeedback(validationResult, result, (string feedbackResult) =>
-                    {
-                        Debug.Log($"Feedback result: {feedbackResult}");
-                        AgentCodeValidator agentValidator = new AgentCodeValidator(apiKeys, taskInput, includedCode, feedbackResult);
-                        agentValidator.OnComplete += (string validationResult) =>
-                        {
-                            Debug.Log($"{agentValidator.Name} OnComplete: {validationResult}");
-                            NextStepsAfterArchitector(validationResult, agentCodeMerger, 
-                                apiKeys, feedbackResult, agentSolutionToDicts, 
-                                agentCodeArchitector, includedCode);
-                        };
-                        agentValidator.Handle(feedbackResult);
-                    });
+                    UpdateProgress(0.6f); 
+                    //Debug.Log($"Current run: {_currentRun}; model: {Sanat.ApiAnthropic.Model.Claude35Latest}");
+                    Debug.Log($"Current run: {_currentRun}; model: {Model.GPT4o1mini.Name}");
+                    //agentCodeArchitector.ChangeLLM(AbstractAgentHandler.ApiProviders.OpenAI, Model.GPT4o1mini.Name);
+                }else if (_currentRun == 4)
+                {
+                    UpdateProgress(0.8f); 
+                    Debug.Log($"Current run: {_currentRun}; model: {Model.GPT4o1mini.Name}");
+                    //agentCodeArchitector.ChangeLLM(AbstractAgentHandler.ApiProviders.OpenAI, Model.GPT4o1mini.Name);
                 }
+                
+                
+                agentCodeArchitector.WorkWithFeedback(validationResult, architectorSolution, (string feedbackResult) =>
+                {
+                    Debug.Log($"Feedback result: {feedbackResult}");
+                    AgentCodeValidator agentValidator = new AgentCodeValidator(apiKeys, taskInput, classToPath, includedCode, feedbackResult, agentCodeMerger as AgentCodeMerger);
+                    agentValidator.OnComplete += (string validationResult) =>
+                    {
+                        Debug.Log($"{agentValidator.Name} OnComplete: {validationResult}");
+                        NextStepsAfterArchitector(validationResult, agentCodeMerger, 
+                            apiKeys, feedbackResult, agentSolutionToDicts, 
+                            agentCodeArchitector, includedCode);
+                    };
+                    agentValidator.Handle(feedbackResult);
+                });
             }
+            
 
             return agentCodeMerger;
         }
@@ -324,11 +332,11 @@ namespace Sanat.CodeGenerator
             Repaint();
         }
 
-        private string GeneratePrompt(Dictionary<string, string> projectCode, int rowsToRemove = 0)
+        private string GeneratePrompt(int rowsToRemove = 0)
         {
             string includedCode = "";
             string includedCodeRaw = "";
-            includedCodeRaw = GenerateIncludedCode(projectCode, includedCodeRaw, ref includedCode);
+            includedCodeRaw = GenerateIncludedCode(includedCodeRaw, ref includedCode);
             includedCode = Regex.Replace(includedCode, @"\s+", " ").Trim();
             string clearedCodeScriptForLLM = includedCodeRaw;
             string promptLocation = Application.dataPath + $"{AbstractAgentHandler.PROMPTS_FOLDER_PATH}Unity code architector.md";
@@ -339,7 +347,7 @@ namespace Sanat.CodeGenerator
             return clearedCodeScriptForLLM;
         }
 
-        private string GenerateIncludedCode(Dictionary<string, string> projectCode, string includedCodeRaw, ref string includedCode)
+        private string GenerateIncludedCode(string includedCodeRaw, ref string includedCode)
         {
             foreach (var kvPathToCode in projectCode)
             {

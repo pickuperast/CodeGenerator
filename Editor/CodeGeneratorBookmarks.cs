@@ -1,7 +1,8 @@
-using System;
+﻿using System;
 using UnityEngine;
 using UnityEditor;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEditorInternal;
 
 namespace Sanat.CodeGenerator.Bookmarks
@@ -17,20 +18,19 @@ namespace Sanat.CodeGenerator.Bookmarks
         private Texture2D bookmarkIcon;
         CodeGenerator codeGenerator;
         public event Action OnBookmarkSaved;
-
         public event System.Action<Bookmark> OnBookmarkLoaded;
-        
+
         public List<Bookmark> GetBookmarks()
         {
             return new List<Bookmark>(bookmarks);
         }
-        
+
         public void DrawBookmarksUI(CodeGenerator codeGeneratorEdotorWindow)
         {
             codeGenerator = codeGeneratorEdotorWindow;
             if (!codeGenerator.IsSettingsLoaded)
                 return;
-            
+
             showBookmarks = EditorGUILayout.Foldout(showBookmarks, "Bookmarks", true);
             if (showBookmarks)
             {
@@ -93,25 +93,23 @@ namespace Sanat.CodeGenerator.Bookmarks
             {
                 return;
             }
-
             float iconWidth = 20;
             float buttonWidth = 60;
             float spacing = 5;
 
-            // Draw icon
-            //EditorGUI.DrawTextureTransparent(new Rect(rect.x, rect.y, iconWidth, rect.height), bookmarkIcon);
-
-            // Draw name
-            EditorGUI.LabelField(new Rect(rect.x + iconWidth + spacing, rect.y, rect.width - iconWidth - buttonWidth * 2 - spacing * 3, rect.height), 
+            EditorGUI.LabelField(new Rect(rect.x + iconWidth + spacing, rect.y, rect.width - iconWidth - buttonWidth * 3 - spacing * 4, rect.height),
                 new GUIContent(bookmark.Name, bookmark.Task));
 
-            // Draw load button
+            if (GUI.Button(new Rect(rect.xMax - buttonWidth * 3 - spacing * 2, rect.y, buttonWidth, rect.height), "Add"))
+            {
+                AddBookmark(bookmark);
+            }
+
             if (GUI.Button(new Rect(rect.xMax - buttonWidth * 2 - spacing, rect.y, buttonWidth, rect.height), "Load"))
             {
                 LoadBookmark(bookmark);
             }
 
-            // Draw delete button
             if (GUI.Button(new Rect(rect.xMax - buttonWidth, rect.y, buttonWidth, rect.height), "Delete"))
             {
                 if (EditorUtility.DisplayDialog("Confirm Deletion", 
@@ -129,7 +127,6 @@ namespace Sanat.CodeGenerator.Bookmarks
                 Debug.LogWarning("Bookmark name cannot be empty.");
                 return;
             }
-
             bookmarks.Add(bookmark);
             SaveBookmarksToPrefs();
         }
@@ -143,6 +140,22 @@ namespace Sanat.CodeGenerator.Bookmarks
                     if (bkm.Name == bookmark.Name)
                     {
                         OnBookmarkLoaded?.Invoke(bkm);
+                        break;
+                    }
+                }
+            }
+        }
+
+        public void AddBookmark(Bookmark bookmark)
+        {
+            if (bookmark != null)
+            {
+                foreach (var bkm in bookmarks)
+                {
+                    if (bkm.Name == bookmark.Name)
+                    {
+                        codeGenerator.selectedClassNames.AddRange(bkm.SelectedClassNames);
+                        codeGenerator.selectedClassNames = new List<string>(codeGenerator.selectedClassNames.Distinct());
                         break;
                     }
                 }
@@ -170,7 +183,6 @@ namespace Sanat.CodeGenerator.Bookmarks
                 bookmarks = loadedBookmarks.bookmarks;
                 return bookmarks;
             }
-
             return new List<Bookmark>();
         }
 

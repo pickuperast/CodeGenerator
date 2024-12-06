@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Networking;
+using Newtonsoft.Json;
 
 namespace Sanat.ApiAnthropic
 {
@@ -12,11 +13,14 @@ namespace Sanat.ApiAnthropic
         public static string MessagesURL => $"{BaseURL}messages";
         public static bool IsApiKeyValid(string apiKey) => !string.IsNullOrEmpty(apiKey);
 
-        public static UnityWebRequestAsyncOperation SubmitChatAsync(string apiKey, Model model, float temp, int maxTokens,
-            List<ChatMessage> messages, Action<string> callback)
+        public static UnityWebRequestAsyncOperation SubmitChatAsync(string apiKey, ApiAntrophicData.ChatRequest chatRequest, Action<ApiAntrophicData.ChatResponse> callback)
         {
-            var chatRequest = new ChatRequest(model, temp, messages, maxTokens);
-            string jsonData = JsonUtility.ToJson(chatRequest);
+            var settings = new JsonSerializerSettings
+            {
+                NullValueHandling = NullValueHandling.Ignore,
+                DefaultValueHandling = DefaultValueHandling.Ignore
+            };
+            string jsonData = JsonConvert.SerializeObject(chatRequest, settings);
 
             UnityWebRequest webRequest = CreateWebRequest(apiKey, MessagesURL, jsonData);
 
@@ -26,18 +30,31 @@ namespace Sanat.ApiAnthropic
             {
                 var success = webRequest.result == UnityWebRequest.Result.Success;
                 var text = success ? webRequest.downloadHandler.text : string.Empty;
-                if (!success) Debug.Log($"{webRequest.error}\n{webRequest.downloadHandler.text}");
+                ApiAntrophicData.ChatResponse responseData = null;
+                if (!success)
+                {
+                    Debug.Log($"{webRequest.error}\n{webRequest.downloadHandler.text}");
+                    if (webRequest.downloadHandler.text.Contains("Overloaded"))
+                    {
+                        string oldModel = chatRequest.model;
+                        chatRequest.model = Model.DowngradeModel(chatRequest.model);
+                        Debug.Log($"Changing model {oldModel} -> {chatRequest.model}");
+                        SubmitChatAsync(apiKey, chatRequest, callback);
+                        return;
+                    }
+                }
                 webRequest.Dispose();
                 webRequest = null;
-
                 if (!string.IsNullOrEmpty(text))
                 {
-                    var responseData = JsonUtility.FromJson<ChatResponse>(text);
-                    text = responseData.content[0].text.Trim();
+                    responseData = JsonConvert.DeserializeObject<ApiAntrophicData.ChatResponse>(text);
+                    Debug.Log($"ChatResponse: {responseData}");
+                    //text = responseData.content[0].text.Trim();
                     var tokensPrompt = responseData.usage.input_tokens;
                     var tokensCompletion = responseData.usage.output_tokens;
                     var tokensTotal = tokensPrompt + tokensCompletion;
                     
+                    Model model = Model.GetModelByName(responseData.model);
                     float inputCost = (tokensPrompt / 1000000f) * model.InputPricePerMil;
                     float outputCost = (tokensCompletion / 1000000f) * model.OutputPricePerMil;
                     float totalCost = inputCost + outputCost;
@@ -46,7 +63,7 @@ namespace Sanat.ApiAnthropic
                               $"output_tokens: {tokensCompletion} (${outputCost:F6}); " +
                               $"total_tokens: {tokensTotal}");
                 }
-                callback?.Invoke(text);
+                callback?.Invoke(responseData);
             };
 
             return asyncOp;
@@ -67,62 +84,5 @@ namespace Sanat.ApiAnthropic
 
             return webRequest;
         }
-    }
-
-    [Serializable]
-    public class ChatRequest
-    {
-        public string model;
-        public int max_tokens;
-        public float temperature;
-        public List<ChatMessage> messages;
-
-        public ChatRequest(Model model, float temperature, List<ChatMessage> messages, int maxTokens)
-        {
-            this.model = model.Name;
-            this.max_tokens = maxTokens;
-            this.temperature = temperature;
-            this.messages = messages;
-        }
-    }
-
-    [Serializable]
-    public class ChatMessage
-    {
-        public string role;
-        public string content;
-
-        public ChatMessage(string role, string content)
-        {
-            this.role = role;
-            this.content = content;
-        }
-    }
-
-    [Serializable]
-    public class ChatResponse
-    {
-        public List<ContentItem> content;
-        public string id;
-        public string model;
-        public string role;
-        public string stop_reason;
-        public string stop_sequence;
-        public string type;
-        public Usage usage;
-    }
-
-    [Serializable]
-    public class ContentItem
-    {
-        public string text;
-        public string type;
-    }
-
-    [Serializable]
-    public class Usage
-    {
-        public int input_tokens;
-        public int output_tokens;
     }
 }

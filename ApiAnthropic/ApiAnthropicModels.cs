@@ -36,6 +36,19 @@ namespace Sanat.ApiAnthropic
                     return Claude35;
             }
         }
+        
+        public static string DowngradeModel(string modelName)
+        {
+            switch (modelName)
+            {
+                case "claude-3-5-sonnet-20241022":
+                    return "claude-3-5-sonnet-20240620";
+                case "claude-3-5-sonnet-20240620":
+                    return "claude-3-5-haiku-20241022";
+                default:
+                    return "";
+            }
+        }
        
         public static Model Claude35 { get; } = new Model("claude-3-5-sonnet-20240620", ModelType.Chat, 200000, 3f, 15f, 8192);
         

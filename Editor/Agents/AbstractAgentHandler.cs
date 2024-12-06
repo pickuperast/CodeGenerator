@@ -27,6 +27,7 @@ namespace Sanat.CodeGenerator.Agents
         public string[] Tools { get; set; }
         public float Temperature { get; set; }
         public string Instructions { get; set; }
+        public Dictionary<string, string> ClassToPath { get; set; }
         public ApiProviders SelectedApiProvider = ApiProviders.Anthropic;
         public ApiKeys Apikeys;
         public Action<string> OnComplete;
@@ -134,8 +135,10 @@ namespace Sanat.CodeGenerator.Agents
             public Action<ToolCalls> onOpenaiToolComplete;
             public Action<CompletionResponse> onOpenaiChatResponseComplete;
             public ToolRequest geminiToolRequest;
-            public OpenAI.Tool[] openaiTools;
-            public Sanat.ApiAnthropic.Model antrophicModel;
+            public ApiOpenAI.Tool[] openaiTools;
+            
+            public ApiAntrophicData.ChatRequest antrophicRequest;
+            public Action<ApiAntrophicData.ChatResponse> onAntrophicChatResponseComplete;
             public bool isToolUse = false;
             
             public BotParameters(string prompt, ApiProviders apiProvider, float temp, Action<string> onComplete, string modelName = null, bool isToolUse = false)
@@ -201,8 +204,8 @@ namespace Sanat.CodeGenerator.Agents
                     }
                     break;
                 case ApiProviders.Anthropic:
-                    ApiAnthropic.Model model = ApiAnthropic.Model.GetModelByName(_modelName);
-                    AskAntrophic(model, botParameters.prompt, botParameters.temp, botParameters.onComplete);
+                    AskAntrophic(botParameters.antrophicRequest, botParameters.onAntrophicChatResponseComplete);
+
                     break;
                 case ApiProviders.Groq:
                     if (botParameters.isToolUse)
@@ -220,7 +223,7 @@ namespace Sanat.CodeGenerator.Agents
             }
         }
 
-        public void AskChatGpt(string prompt, float temp, Action<string> onComplete, List<OpenAI.Tool> tools = null) {
+        public void AskChatGpt(string prompt, float temp, Action<string> onComplete, List<ApiOpenAI.Tool> tools = null) {
             List<ApiOpenAI.ChatMessage> messages = new List<ApiOpenAI.ChatMessage>();
             messages.Add(new ApiOpenAI.ChatMessage("user", prompt));
             ApiOpenAI.Model model = ApiOpenAI.Model.GetModelByName(_modelName);
@@ -235,16 +238,10 @@ namespace Sanat.CodeGenerator.Agents
             );
         }
         
-        public void AskAntrophic(ApiAnthropic.Model model, string prompt, float temp, Action<string> onComplete) {
-            List<ApiAnthropic.ChatMessage> messages = new List<ApiAnthropic.ChatMessage>();
-            messages.Add(new ApiAnthropic.ChatMessage("user", prompt));
-
+        public void AskAntrophic(ApiAntrophicData.ChatRequest chatRequest, Action<ApiAntrophicData.ChatResponse> onComplete) {
             UnityWebRequestAsyncOperation request = Anthropic.SubmitChatAsync(
                 Apikeys.antrophic,
-                model,
-                temp,
-                model.MaxOutputTokens,
-                messages,
+                chatRequest,
                 onComplete
             );
         }
@@ -316,6 +313,13 @@ namespace Sanat.CodeGenerator.Agents
                 this.groq = groq;
                 this.gemini = gemini;
             }
+        }
+        
+        [Serializable]
+        public class FileContent
+        {
+            public string FilePath { get; set; }
+            public string Content { get; set; }
         }
     }
 }

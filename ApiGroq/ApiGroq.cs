@@ -74,7 +74,7 @@ namespace Sanat.ApiGroq
             float temperature, float top_p,
             float frequency_penalty, float presence_penalty, 
             int maxTokens,
-            List<ChatMessage> messages, Action<CompletionResponse> callback, OpenAI.Tool[] tools, string tool_choice = "required"
+            List<ChatMessage> messages, Action<CompletionResponse> callback, Tool[] tools, string tool_choice = "required"
             ){
             var chatRequest = new ChatRequest(model.Name, messages, 
                 temperature, top_p, frequency_penalty, presence_penalty,

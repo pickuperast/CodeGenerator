@@ -1,10 +1,10 @@
 // Copyright (c) Sanat. All rights reserved.
 using System;
 using System.Collections.Generic;
+using Newtonsoft.Json;
 
 namespace Sanat.ApiOpenAI
 {
-
     #region Text Generation
 
     [Serializable]
@@ -60,7 +60,7 @@ namespace Sanat.ApiOpenAI
     [Serializable]
     public class Choice
     {
-        public OpenAI.Message message;
+        public Message message;
         public string finish_reason;
     }
 
@@ -167,21 +167,12 @@ namespace Sanat.ApiOpenAI
     {
         public string role;
         public string content;
-        //public ToolCalls[] tool_calls;
 
         public ChatMessage(string role, string content)
         {
             this.role = role;
             this.content = content;
         }
-    }
-    
-    [Serializable]
-    public class ToolCalls
-    {
-        public string id;
-        public Function function;
-        public string type;
     }
     
     [Serializable]
@@ -279,5 +270,123 @@ namespace Sanat.ApiOpenAI
     }
 
     #endregion
+    
+    #region Tool
+    
+    [Serializable]
+    public class FunctionCall
+    {
+        public string name;
+        public string arguments;
+    }
+    
+    [Serializable]
+    public class Tool
+    {
+        public string type;
+        public ToolFunction function;
+        
+        public Tool(string type, ToolFunction function)
+        {
+            this.type = type;
+            this.function = function;
+        }
+    }
 
+    [Serializable]
+    public class ToolFunction
+    {
+        public string name;
+        public string description;
+        public Parameter parameters;
+        
+        public ToolFunction(string name, string description, Parameter parameters)
+        {
+            this.name = name;
+            this.description = description;
+            this.parameters = parameters;
+        }
+    }
+    
+    [System.Serializable]
+    public class Parameter
+    {
+        [JsonProperty("type")]
+        public string Type { get; set; } = DataTypes.OBJECT;
+
+        [JsonProperty("properties")]
+        public Dictionary<string, Property> Properties { get; set; } = new Dictionary<string, Property>();
+
+        [JsonProperty("required")]
+        public List<string> Required { get; set; } = new List<string>();
+        
+        [JsonProperty("additionalProperties")]
+        public bool AdditionalProperties { get; set; } = false;
+
+        /// <summary>
+        /// Create parameter for the function call. 
+        /// Use AddProperty() to add more properties. 
+        /// Use DataTypes class to access data types available for propertyType
+        /// </summary>
+        public Parameter(string propertyName, string propertyType, string description)
+        {
+            Property property = new Property();
+            property.Description = description;
+            property.Type = propertyType;
+            Properties.Add(propertyName, property);
+        }
+
+        public Parameter() { }
+
+        /// <summary>
+        /// Add a Property to the parameter. 
+        /// Use DataTypes class to access data types available for propertyType
+        /// </summary>
+        /// <param name="propertyName"></param>
+        /// <param name="propertyType"></param>
+        /// <param name="description"></param>
+        public void AddProperty(string propertyName, string propertyType, string description)
+        {
+            Property property = new Property();
+            property.Description = description;
+            property.Type = propertyType;
+            Properties.Add(propertyName, property);
+        }
+    }
+
+    [System.Serializable]
+    public class Property
+    {
+        [JsonProperty("type")]
+        public string Type { get; set; }
+
+        [JsonProperty("description")]
+        public string Description { get; set; }
+    }
+
+    [System.Serializable]
+    public class Message
+    {
+        public string role;
+        public string content;
+        public ToolCalls[] tool_calls;
+    }
+    
+    [System.Serializable]
+    public class ToolCalls
+    {
+        public string id;
+        public string type;
+        public FunctionCall function;
+    }
+    
+    public static class DataTypes
+    {
+        public static readonly string STRING = "string";
+        public static readonly string ARRAY = "array";
+        public static readonly string NUMBER = "number";
+        public static readonly string OBJECT = "object";
+    }
+        
+    #endregion
 }
