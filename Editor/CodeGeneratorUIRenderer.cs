@@ -24,8 +24,8 @@ public class CodeGeneratorUIRenderer
         codeGenerator.taskScrollPosition = EditorGUILayout.BeginScrollView(codeGenerator.taskScrollPosition, GUILayout.Height(textAreaHeight));
         codeGenerator.taskInput = EditorGUILayout.TextArea(codeGenerator.taskInput, textAreaStyle, GUILayout.ExpandHeight(true));
         EditorGUILayout.EndScrollView();
-        GUILayout.Space(20);
 
+        GUILayout.Space(20);
         if (codeGenerator.isSettingsVisible)
             codeGenerator.DrawSettingsFields();
         if (codeGenerator.isAgentSettingsVisible)
@@ -51,7 +51,6 @@ public class CodeGeneratorUIRenderer
         EditorGUILayout.EndHorizontal();
 
         EditorGUILayout.Space();
-
         codeGenerator.classNameInput = EditorGUILayout.TextField("Class Name", codeGenerator.classNameInput);
         RenderClassNameSuggestions(codeGenerator);
 
@@ -60,6 +59,10 @@ public class CodeGeneratorUIRenderer
         if (GUILayout.Button(selectedClassesLabel))
         {
             isSelectedClassesVisible = !isSelectedClassesVisible;
+        }
+        if (GUILayout.Button("Clear Selected Classes"))
+        {
+            codeGenerator.selectedClassNames.Clear();
         }
         EditorGUILayout.EndHorizontal();
 
@@ -76,7 +79,6 @@ public class CodeGeneratorUIRenderer
         }
 
         EditorGUILayout.Space();
-
         RenderGenerationButtons(codeGenerator);
 
         if (codeGenerator.IsSettingsLoaded)

@@ -14,9 +14,10 @@ namespace Sanat.CodeGenerator.Bookmarks
         private string bookmarkSearchQuery = "";
         private Vector2 bookmarkScrollPosition;
         private bool showBookmarks = false;
-        private ReorderableList bookmarkList = new ReorderableList(new List<Bookmark>(), typeof(Bookmark), true, true, false, false);
+        private ReorderableList bookmarkList;
         private Texture2D bookmarkIcon;
         CodeGenerator codeGenerator;
+
         public event Action OnBookmarkSaved;
         public event System.Action<Bookmark> OnBookmarkLoaded;
 
@@ -25,12 +26,13 @@ namespace Sanat.CodeGenerator.Bookmarks
             return new List<Bookmark>(bookmarks);
         }
 
-        public void DrawBookmarksUI(CodeGenerator codeGeneratorEdotorWindow)
+        public void DrawBookmarksUI(CodeGenerator codeGeneratorEditorWindow)
         {
-            codeGenerator = codeGeneratorEdotorWindow;
+            codeGenerator = codeGeneratorEditorWindow;
             if (!codeGenerator.IsSettingsLoaded)
                 return;
 
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
             showBookmarks = EditorGUILayout.Foldout(showBookmarks, "Bookmarks", true);
             if (showBookmarks)
             {
@@ -39,6 +41,7 @@ namespace Sanat.CodeGenerator.Bookmarks
                 DrawBookmarkSearch();
                 DrawBookmarkList();
             }
+            EditorGUILayout.EndVertical();
         }
 
         private void DrawBookmarkCreation()
@@ -47,6 +50,7 @@ namespace Sanat.CodeGenerator.Bookmarks
             newBookmarkName = EditorGUILayout.TextField("New Bookmark Name", newBookmarkName);
             string[] categories = { "General", "UI", "Gameplay", "Audio" };
             int selectedCategory = EditorGUILayout.Popup("Category", 0, categories);
+
             if (GUILayout.Button("Save Bookmark", GUILayout.Width(120)))
             {
                 SaveBookmark(new Bookmark(newBookmarkName, codeGenerator.selectedClassNames, selectedCategory, ""));
@@ -62,23 +66,40 @@ namespace Sanat.CodeGenerator.Bookmarks
 
         private void DrawBookmarkList()
         {
-            if (bookmarks.Count == 0)
+            if (bookmarks == null || bookmarks.Count == 0)
             {
                 EditorGUILayout.LabelField("No bookmarks saved.");
                 return;
             }
+
             bookmarkScrollPosition = EditorGUILayout.BeginScrollView(bookmarkScrollPosition, GUILayout.Height(200));
-            bookmarkList.DoLayoutList();
+            if (bookmarkList != null)
+            {
+                try
+                {
+                    bookmarkList.DoLayoutList();
+                }
+                catch (Exception e)
+                {
+                    Debug.LogWarning($"Error in bookmark list: {e.Message}. Reinitializing...");
+                    InitializeReorderableList();
+                }
+            }
             EditorGUILayout.EndScrollView();
         }
 
         public void InitializeReorderableList()
         {
+            if (bookmarks == null)
+            {
+                bookmarks = new List<Bookmark>();
+            }
+
             if (bookmarks.Count == 0)
             {
                 LoadBookmarksFromPrefs();
-                return;
             }
+
             bookmarkList = new ReorderableList(bookmarks, typeof(Bookmark), true, true, false, false);
             bookmarkList.drawHeaderCallback = (Rect rect) => EditorGUI.LabelField(rect, "Bookmarks");
             bookmarkList.drawElementCallback = DrawBookmarkElement;
@@ -87,18 +108,33 @@ namespace Sanat.CodeGenerator.Bookmarks
 
         private void DrawBookmarkElement(Rect rect, int index, bool isActive, bool isFocused)
         {
+            if (index < 0 || index >= bookmarks.Count)
+            {
+                Debug.LogWarning($"Invalid bookmark index: {index}. Total bookmarks: {bookmarks.Count}");
+                return;
+            }
+
             var bookmark = bookmarks[index];
-            if (!string.IsNullOrEmpty(bookmarkSearchQuery) && 
+            if (bookmark == null)
+            {
+                Debug.LogWarning($"Null bookmark at index {index}");
+                return;
+            }
+
+            if (!string.IsNullOrEmpty(bookmarkSearchQuery) &&
                 !bookmark.Name.ToLower().Contains(bookmarkSearchQuery.ToLower()))
             {
                 return;
             }
+
             float iconWidth = 20;
             float buttonWidth = 60;
             float spacing = 5;
 
-            EditorGUI.LabelField(new Rect(rect.x + iconWidth + spacing, rect.y, rect.width - iconWidth - buttonWidth * 3 - spacing * 4, rect.height),
-                new GUIContent(bookmark.Name, bookmark.Task));
+            EditorGUI.LabelField(
+                new Rect(rect.x + iconWidth + spacing, rect.y, rect.width - iconWidth - buttonWidth * 3 - spacing * 4, rect.height),
+                new GUIContent(bookmark.Name, bookmark.Task)
+            );
 
             if (GUI.Button(new Rect(rect.xMax - buttonWidth * 3 - spacing * 2, rect.y, buttonWidth, rect.height), "Add"))
             {
@@ -112,10 +148,11 @@ namespace Sanat.CodeGenerator.Bookmarks
 
             if (GUI.Button(new Rect(rect.xMax - buttonWidth, rect.y, buttonWidth, rect.height), "Delete"))
             {
-                if (EditorUtility.DisplayDialog("Confirm Deletion", 
+                if (EditorUtility.DisplayDialog("Confirm Deletion",
                     $"Are you sure you want to delete the bookmark '{bookmark.Name}'?", "Yes", "No"))
                 {
                     DeleteBookmark(bookmark);
+                    InitializeReorderableList(); // Reinitialize the list after deletion
                 }
             }
         }
@@ -127,8 +164,25 @@ namespace Sanat.CodeGenerator.Bookmarks
                 Debug.LogWarning("Bookmark name cannot be empty.");
                 return;
             }
+
+            bookmark.Task = codeGenerator.taskInput;
+
             bookmarks.Add(bookmark);
             SaveBookmarksToPrefs();
+
+            Debug.Log($"[Bookmark Manager] New bookmark saved: {bookmark.Name}. "+
+                      $"Selected Classes ({bookmark.SelectedClassNames.Count}): "+
+                      $"{string.Join(", ", bookmark.SelectedClassNames)}; "+
+                      $"Task: {bookmark.Task}; Category: {bookmark.Category}");
+
+            OnBookmarkSaved?.Invoke();
+
+            InitializeReorderableList();
+
+            if (codeGenerator != null)
+            {
+                codeGenerator.Repaint();
+            }
         }
 
         public void LoadBookmark(Bookmark bookmark)

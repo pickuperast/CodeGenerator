@@ -1,4 +1,4 @@
-// Copyright (c) Sanat. All rights reserved.
+﻿// Copyright (c) Sanat. All rights reserved.
 using UnityEngine;
 using UnityEditor;
 using System.Collections.Generic;
@@ -24,8 +24,8 @@ namespace Sanat.CodeGenerator
         private CodeGeneratorSettingsManager _settingsManager;
         private CodeGeneratorUIRenderer _uiRenderer;
         private CodeGeneratorPreparationHelper _preparationHelper;
-        private RagProcessor _ragProcessor; 
-
+        private RagProcessor _ragProcessor;
+ 
         // UI State
         public Vector2 scrollPosition;
         public Vector2 taskScrollPosition;
@@ -77,6 +77,7 @@ namespace Sanat.CodeGenerator
         // Managers
         public CodeGeneratorBookmarks bookmarkManager;
         #endregion
+
         public RagProcessor ragProcessor;
 
         [System.Serializable]
@@ -120,7 +121,6 @@ namespace Sanat.CodeGenerator
         {
             string projectPath = Application.dataPath;
             EditorUtility.DisplayProgressBar("Processing Files", "Starting...", 0f);
-
             try
             {
                 await ragProcessor.ProcessAllFiles(projectPath);
@@ -198,7 +198,6 @@ namespace Sanat.CodeGenerator
     
             var agentSolutionToDicts = new AgentSolutionToDict(apiKeys, projectCodePaths);
             var agentCodeMerger = new AgentCodeMerger(apiKeys, projectCodeLight, projectCodePaths); // Using the correct constructor
-
             // Set up callbacks and chain
             SetupArchitectorCallbacks(agentCodeArchitector, agentCodeMerger, apiKeys, agentSolutionToDicts, includedCode);
     
@@ -227,7 +226,6 @@ namespace Sanat.CodeGenerator
                 });
             };
             
-            
             // Configure architect's completion handling
             agentCodeArchitector.OnComplete += (string result) =>
             {
@@ -239,18 +237,15 @@ namespace Sanat.CodeGenerator
                     NextStepsAfterArchitector(validationResult, agentCodeMerger, apiKeys, result, 
                         agentSolutionToDicts, agentCodeArchitector, includedCode);
                 };
-
                 // Start validation
                 agentValidator.Handle(result);
             };
-
             // Configure merger completion to finish the process
             agentCodeMerger.OnComplete += (string mergedCode) => 
             { 
                 Debug.Log($"Code generation completed. Result: {mergedCode}");
                 FinishGenerationActions();
             };
-
             // Handle potential failures 
             agentCodeArchitector.OnUnsuccessfull += () =>
             {
@@ -261,8 +256,8 @@ namespace Sanat.CodeGenerator
             agentCodeMerger.OnUnsuccessfull += () => 
             {
                 Debug.LogError("Code merger failed to process solution");
-                FinishGenerationActions(); 
-            };
+                FinishGenerationActions();
+             };
         }
 
         private AbstractAgentHandler NextStepsAfterArchitector(string validationResult,
@@ -293,17 +288,16 @@ namespace Sanat.CodeGenerator
                     //agentCodeArchitector.ChangeLLM(AbstractAgentHandler.ApiProviders.OpenAI, Model.GPT4o_16K.Name);
                 }else if (_currentRun == 3)
                 {
-                    UpdateProgress(0.6f); 
-                    //Debug.Log($"Current run: {_currentRun}; model: {Sanat.ApiAnthropic.Model.Claude35Latest}");
+                    UpdateProgress(0.6f);
+                     //Debug.Log($"Current run: {_currentRun}; model: {Sanat.ApiAnthropic.Model.Claude35Latest}");
                     Debug.Log($"Current run: {_currentRun}; model: {Model.GPT4o1mini.Name}");
                     //agentCodeArchitector.ChangeLLM(AbstractAgentHandler.ApiProviders.OpenAI, Model.GPT4o1mini.Name);
                 }else if (_currentRun == 4)
                 {
-                    UpdateProgress(0.8f); 
-                    Debug.Log($"Current run: {_currentRun}; model: {Model.GPT4o1mini.Name}");
+                    UpdateProgress(0.8f);
+                     Debug.Log($"Current run: {_currentRun}; model: {Model.GPT4o1mini.Name}");
                     //agentCodeArchitector.ChangeLLM(AbstractAgentHandler.ApiProviders.OpenAI, Model.GPT4o1mini.Name);
                 }
-                
                 
                 agentCodeArchitector.WorkWithFeedback(validationResult, architectorSolution, (string feedbackResult) =>
                 {
@@ -320,7 +314,6 @@ namespace Sanat.CodeGenerator
                 });
             }
             
-
             return agentCodeMerger;
         }
 
@@ -400,7 +393,6 @@ namespace Sanat.CodeGenerator
                 }
             }
         }
-
         #endregion
 
         #region Settings
@@ -457,7 +449,6 @@ namespace Sanat.CodeGenerator
                 }
                 EditorGUILayout.EndHorizontal();
             }
-
             EditorGUILayout.BeginHorizontal();
             EditorGUILayout.LabelField("Gemini Project Name", GUILayout.Width(150));
             GeminiProjectName = EditorGUILayout.TextField(GeminiProjectName);
@@ -491,7 +482,6 @@ namespace Sanat.CodeGenerator
             {
                 Debug.Log($"{PLUGIN_NAME}Ignored folder path: {ignoredFolder}");
             }
-
             string[] csFiles = Directory.GetFiles("Assets", "*.cs", SearchOption.AllDirectories)
                 .Concat(Directory.GetFiles("Packages", "*.cs", SearchOption.AllDirectories))
                 .Where(filePath => !_ignoredFolders.Any(ignoredFolder => filePath.Contains(ignoredFolder)))
@@ -544,7 +534,6 @@ namespace Sanat.CodeGenerator
                 EditorApplication.update -= UpdateButtonAnimation;
             }
         }
-
         
         public void LoadBookmarkData(CodeGeneratorBookmarks.Bookmark bookmark)
         {
@@ -567,7 +556,6 @@ namespace Sanat.CodeGenerator
             {
                 return;
             }
-
             Debug.Log($"{PLUGIN_NAME}First launch detected. Adding prompt save folder to .gitignore and ignore.conf files.");
             string assetsParentPath = Directory.GetParent(Application.dataPath).FullName;
             string gitignorePath = Path.Combine(assetsParentPath, ".gitignore");
