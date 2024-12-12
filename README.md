@@ -56,6 +56,7 @@
 
 - **Unity Version:** Compatible with Unity 2020.3 and above.
 - **APIs:** Access to any/all of Gemini, OpenAI, Groq, and Anthropic APIs.
+- **Packages:** UniTask.
 - **Platform:** Supports all platforms that Unity supports.
 - **Dependencies:** None
 
