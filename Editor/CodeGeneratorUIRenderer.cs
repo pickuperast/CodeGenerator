@@ -96,21 +96,22 @@ public class CodeGeneratorUIRenderer
 
     private void RenderSelectedClassesColumn(CodeGenerator codeGenerator, int column)
     {
-        int itemsPerColumn = (codeGenerator.selectedClassNames.Count + 1) / 2;
+        var selectedClasses = codeGenerator.selectedClassNames;
+        int itemsPerColumn = (selectedClasses.Count + 1) / 2;
         int startIndex = column * itemsPerColumn;
-        int endIndex = Math.Min(startIndex + itemsPerColumn, codeGenerator.selectedClassNames.Count);
+        int endIndex = Math.Min(startIndex + itemsPerColumn, selectedClasses.Count);
 
         for (int i = startIndex; i < endIndex; i++)
         {
             EditorGUILayout.BeginHorizontal();
             if (GUILayout.Button("x", GUILayout.Width(20)))
             {
-                codeGenerator.selectedClassNames.RemoveAt(i);
+                selectedClasses.RemoveAt(i);
                 return;
             }
-            if (GUILayout.Button(codeGenerator.selectedClassNames[i], GUILayout.ExpandWidth(true)))
+            if (GUILayout.Button(selectedClasses[i], GUILayout.ExpandWidth(true)))
             {
-                if (codeGenerator.classToPath.TryGetValue(codeGenerator.selectedClassNames[i], out string filePath))
+                if (codeGenerator.classToPath.TryGetValue(selectedClasses[i], out string filePath))
                 {
                     CodeGeneratorFileOpener.OpenScript(filePath);
                 }

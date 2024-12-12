@@ -29,7 +29,7 @@ EXAMPLE RESPONSE:
 "ItemDescription": "A pulsating crystal that emanates warmth and contains the essence of an ancient dragon",
 "QuestGiverName": "Eldrath Flamekeep",
 "QuestGiverIdentity": 0,
-"QuestGiverFaction": "Order of the Dragon Seekers",
+"QuestGiverFaction": "Order of the Dragon Seekers",~~~~
 "HowMany": 3,
 "QuestDescription": "Brave adventurer, I require three Dragon's Heart Crystals from the depths of the Crimson Caverns. These artifacts are essential for our ritual to prevent the awakening of the ancient dragon.",
 "IconPrompt": "A glowing red crystal with dragon scales pattern, emitting magical energy"

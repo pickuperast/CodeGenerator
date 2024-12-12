@@ -18,7 +18,6 @@ public class ComfyUIImageProcessor : ScriptableObject
 
     private static readonly HttpClient httpClient = new HttpClient();
 
-    [MenuItem("ComfyUI/Process Image")]
     public static async void ProcessImageWithComfyUI(string imagePath, string workflowName)
     {
         try
@@ -33,7 +32,6 @@ public class ComfyUIImageProcessor : ScriptableObject
         }
     }
     
-    [MenuItem("ComfyUI/Generate Image")]
     public static async void GenerateImageWithComfyUI(string prompt, string workflowName, string outputFolderPath)
     {
         try

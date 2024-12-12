@@ -12,10 +12,6 @@ namespace Sanat.ApiGemini
         public static string BaseURL2 { get; set; } = "https://generativelanguage.googleapis.com/v1beta/models/";
         public const string PREFS_GEMINI_PROJECT_NAME = "GeminiProjectName";
         public static string TextToSpeechURL = "https://texttospeech.googleapis.com/v1/text:synthesize";
-        public static string GetGeminiProjectName()
-        {
-            return UnityEditor.EditorPrefs.GetString(PREFS_GEMINI_PROJECT_NAME, "");
-        }
 
         public static UnityWebRequestAsyncOperation SubmitChatAsync(
             string apiKey, 
@@ -81,11 +77,11 @@ namespace Sanat.ApiGemini
             return webRequest;
         }
 
-        public static void GenerateTextToSpeech(string text, string languageCode, string name, string ssmlGender, Action<AudioClip> callback)
+        public static void GenerateTextToSpeech(string text, string projectName, string languageCode, string name, string ssmlGender, Action<AudioClip> callback)
         {
             var request = new TextToSpeechRequest(text, languageCode, name, ssmlGender);
             string jsonData = JsonUtility.ToJson(request);
-            UnityWebRequest webRequest = CreateWebRequest(GetGeminiProjectName(), TextToSpeechURL, jsonData);
+            UnityWebRequest webRequest = CreateWebRequest(projectName, TextToSpeechURL, jsonData);
 
             UnityWebRequestAsyncOperation asyncOp = webRequest.SendWebRequest();
             asyncOp.completed += (op) =>
@@ -93,7 +89,7 @@ namespace Sanat.ApiGemini
                 var success = webRequest.result == UnityWebRequest.Result.Success;
                 if (!success)
                 {
-                    Debug.Log($"{webRequest.error} {GetGeminiProjectName()}\n{webRequest.downloadHandler.text}");
+                    Debug.Log($"{webRequest.error} projectName: {projectName}\n{webRequest.downloadHandler.text}");
                     callback?.Invoke(null);
                     return;
                 }

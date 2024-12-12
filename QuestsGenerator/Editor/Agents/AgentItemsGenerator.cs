@@ -40,7 +40,7 @@ namespace Sanat.CodeGenerator.Agents
             string propertyItemDescription = "ItemDescription";
             string propertyQuestGiverName = "QuestGiverName";
             string propertyQuestGiverIdentity = "QuestGiverIdentity";
-            string propertyQuestGiverFaction = "QusetGiverFaction";
+            string propertyQuestGiverFaction = "QuestGiverFaction";
             string propertyQuestDescription = "QuestDescription";
             string propertyIconPrompt = "IconPrompt";
             string propertyAmountRequired = "AmountRequired";

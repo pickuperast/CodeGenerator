@@ -24,6 +24,7 @@ namespace Sanat.ApiAnthropic
 
             UnityWebRequest webRequest = CreateWebRequest(apiKey, MessagesURL, jsonData);
 
+            var startTime = DateTime.Now;
             UnityWebRequestAsyncOperation asyncOp = webRequest.SendWebRequest();
 
             asyncOp.completed += (op) =>
@@ -45,21 +46,21 @@ namespace Sanat.ApiAnthropic
                 }
                 webRequest.Dispose();
                 webRequest = null;
+                var elapsedTime = (DateTime.Now - startTime).Seconds;
                 if (!string.IsNullOrEmpty(text))
                 {
                     responseData = JsonConvert.DeserializeObject<ApiAntrophicData.ChatResponse>(text);
                     Debug.Log($"ChatResponse: {responseData}");
-                    //text = responseData.content[0].text.Trim();
                     var tokensPrompt = responseData.usage.input_tokens;
                     var tokensCompletion = responseData.usage.output_tokens;
                     var tokensTotal = tokensPrompt + tokensCompletion;
-                    
+
                     Model model = Model.GetModelByName(responseData.model);
                     float inputCost = (tokensPrompt / 1000000f) * model.InputPricePerMil;
                     float outputCost = (tokensCompletion / 1000000f) * model.OutputPricePerMil;
                     float totalCost = inputCost + outputCost;
-                    
-                    Debug.Log($"{model.Name} Usage({totalCost:F3}$): input_tokens: {tokensPrompt} (${inputCost:F6}); " +
+
+                    Debug.Log($"{model.Name} [<color=orange>{elapsedTime}</color> sec] Usage(<color=green>{totalCost:F3}</color>$): input_tokens: {tokensPrompt} (${inputCost:F6}); " +
                               $"output_tokens: {tokensCompletion} (${outputCost:F6}); " +
                               $"total_tokens: {tokensTotal}");
                 }

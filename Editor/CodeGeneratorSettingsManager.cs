@@ -1,5 +1,7 @@
 ﻿using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
+using Cysharp.Threading.Tasks;
 using Sanat.CodeGenerator.Agents;
 using Sanat.CodeGenerator.Bookmarks;
 using Sanat.CodeGenerator.CodebaseRag;
@@ -29,7 +31,7 @@ namespace Sanat.CodeGenerator.Editor
             SaveAgentModelSettings(codeGenerator);
         }
         
-        public void LoadSettings(CodeGenerator codeGenerator)
+        public async UniTask LoadSettings(CodeGenerator codeGenerator)
         {
             codeGenerator.selectedClassNames = new List<string>(
                 EditorPrefs.GetString("SelectedClassNames", "")
@@ -57,6 +59,7 @@ namespace Sanat.CodeGenerator.Editor
             Debug.Log("Class list refreshed");
             codeGenerator.CheckAndHandleFirstLaunch();
             Debug.Log("First launch checked");
+            await UniTask.Delay(System.TimeSpan.FromSeconds(5), DelayType.DeltaTime, PlayerLoopTiming.Update);
             codeGenerator.bookmarkManager = new CodeGeneratorBookmarks();
             codeGenerator.bookmarkManager.OnBookmarkLoaded += codeGenerator.LoadBookmarkData;
             codeGenerator.bookmarkManager.LoadBookmarksFromPrefs();

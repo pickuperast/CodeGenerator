@@ -211,6 +211,7 @@ namespace Sanat.ApiOpenAI
 
             UnityWebRequest webRequest = CreateWebRequest(apiKey, ChatURL, jsonData);
 
+            var startTime = DateTime.Now;
             UnityWebRequestAsyncOperation asyncOp = webRequest.SendWebRequest();
 
             asyncOp.completed += (op) =>
@@ -220,7 +221,7 @@ namespace Sanat.ApiOpenAI
                 if (!success) Debug.Log($"{webRequest.error}\n{webRequest.downloadHandler.text}");
                 webRequest.Dispose();
                 webRequest = null;
-
+                var elapsedTime = (DateTime.Now - startTime).Seconds;
                 if (!string.IsNullOrEmpty(text))
                 {
                     var responseData = JsonUtility.FromJson<CompletionResponse>(text);
@@ -234,7 +235,7 @@ namespace Sanat.ApiOpenAI
                     var costPrompt = tokensPrompt * prompt_price / 1000;
                     var costResponse = tokensCompletion * response_price / 1000;
                     var cost = costPrompt + costResponse;
-                    Debug.Log($"{model.Name} Usage({cost.ToString("F3")}$): prompt_tokens: {tokensPrompt}; completion_tokens: {tokensCompletion}; total_tokens: {tokensTotal}");
+                    Debug.Log($"{model.Name} [<color=orange>{elapsedTime}</color> sec] Usage(<color=green>{cost.ToString("F3")}</color>$): prompt_tokens: {tokensPrompt}; completion_tokens: {tokensCompletion}; total_tokens: {tokensTotal}");
                 }
             };
 

@@ -102,7 +102,7 @@ namespace Sanat.CodeGenerator
         private async UniTask LoadSettingsDelayedAsync()
         {
             await UniTask.Delay(System.TimeSpan.FromSeconds(5), DelayType.DeltaTime, PlayerLoopTiming.Update);
-            _settingsManager.LoadSettings(this);
+            await _settingsManager.LoadSettings(this);
         }
         
         private void OnGUI() => _uiRenderer.RenderMainUI(this);
@@ -597,6 +597,7 @@ namespace Sanat.CodeGenerator
         {
             const string key = "CODE_GENERATOR_FIRST_LAUNCH";
             bool isFirstLaunch = EditorPrefs.GetInt(key, 1) == 1;
+            Debug.Log($"{PLUGIN_NAME} Detected First launch");
             if (isFirstLaunch)
             {
                 EditorPrefs.SetInt(key, 0);

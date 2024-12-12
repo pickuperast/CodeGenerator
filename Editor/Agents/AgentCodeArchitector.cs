@@ -1,6 +1,7 @@
 // Copyright (c) Sanat. All rights reserved.
 using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using Newtonsoft.Json;
 using Sanat.ApiGemini;
 using Sanat.ApiOpenAI;
@@ -69,8 +70,8 @@ namespace Sanat.CodeGenerator.Agents
 
         public override void Handle(string input)
         {
-            GetHighLevelSolutionMessages();
-            //ToolHandle();
+            //GetHighLevelSolutionMessages();
+            ToolHandle();
             //OldHandle(input);
         }
 
@@ -128,9 +129,10 @@ namespace Sanat.CodeGenerator.Agents
             AskBot(botParameters);
         }
 
-        private void ToolHandle(List<Antrophic.ChatMessage> additionalMessages = null, string task = "")
+        private async Task ToolHandle(List<Antrophic.ChatMessage> additionalMessages = null, string task = "")
         {
             string agentName = $"<color=green>{Name}</color>";
+            await Task.Delay(100);
             Debug.Log($"{agentName} asking [{SelectedApiProvider}][{_modelName}]: {_task}");
             List<FileContent> fileContents = new List<FileContent>();
             BotParameters botParameters = new BotParameters(_task, SelectedApiProvider, Temperature, null, _modelName, true);
@@ -156,8 +158,7 @@ namespace Sanat.CodeGenerator.Agents
                             for (int i = 0; i < filesAmount; i++)
                             {
                                 SaveResultToFile(toolCalls[i].function.arguments);
-                                fileContents.Add(
-                                    JsonConvert.DeserializeObject<FileContent>(toolCalls[i].function.arguments));
+                                fileContents.Add(JsonConvert.DeserializeObject<FileContent>(toolCalls[i].function.arguments));
                                 logFileNames += $"{fileContents[i].FilePath}, ";
                                 if (i == filesAmount - 1)
                                 {
@@ -188,7 +189,7 @@ namespace Sanat.CodeGenerator.Agents
                     botParameters.antrophicRequest.tool_choice = new Antrophic.ToolChoice {type = "any"};
                     botParameters.onAntrophicChatResponseComplete += (response) =>
                     {
-                        Debug.Log($"{agentName} ToolHandle Result: {response}");
+                        Debug.Log($"{agentName} Working on ToolHandle Result...");
                         if (response.type == "error")
                         {
                             Debug.LogError(
@@ -215,9 +216,9 @@ namespace Sanat.CodeGenerator.Agents
                                                     break;
                                             }
                                         }
-
-                                        Debug.Log(
-                                            $"{agentName} tool_use: {responseContent.name}({fileContent.FilePath}, {fileContent.Content})");
+                                        
+                                        SaveResultToFile($"//{fileContent.FilePath}\n {fileContent.Content}");
+                                        Debug.Log($"{agentName} tool_use: {responseContent.name}({fileContent.FilePath}, {fileContent.Content})");
                                         fileContents.Add(fileContent);
                                     }
                                 }

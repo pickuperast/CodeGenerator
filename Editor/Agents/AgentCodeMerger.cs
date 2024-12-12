@@ -238,6 +238,7 @@ namespace Sanat.CodeGenerator.Agents
 		public async void MergeFiles(List<FileContent> fileContents)
 		{
 			var instructions = LoadPrompt(Application.dataPath + $"{PROMPTS_FOLDER_PATH}{PROMPT_MERGE_CODE}");
+			await Task.Delay(100);
 			foreach(var fileContent in fileContents)
 			{
 				string className = fileContent.FilePath.Split("/").Last();
@@ -261,7 +262,7 @@ namespace Sanat.CodeGenerator.Agents
 			string agentLogName = $"<color=cyan>{Name}</color>";
 			string oldCode = _projectCode.FirstOrDefault(x => x.FilePath == fileContentToMerge.FilePath).Content;
 			string question = $"Path: {fileContentToMerge.FilePath}. Here is the Old Code:\n" + oldCode + "\n\nHere is the New Code:\n" + fileContentToMerge.Content;
-			Debug.Log($"{agentLogName} asking: {question}");
+			Debug.Log($"{agentLogName} MergeCodeWithLLM asking: {question}");
 			
 			_modelName = Model.GPT4omini.Name;//ApiGroqModels.Llama3_70b_8192_tool.Name;
 			BotParameters botParameters = new BotParameters(question, ApiProviders.OpenAI, .2f, null, _modelName, true);
@@ -272,6 +273,7 @@ namespace Sanat.CodeGenerator.Agents
 			botParameters.onOpenaiChatResponseComplete += (response) =>
 			{
 				Debug.Log($"{agentLogName} GetFilePath Result: {response}");
+				SaveResultToFile(JsonConvert.SerializeObject(response));
 				if (response.choices[0].finish_reason == "tool_calls")
 				{
 					ToolCalls[] toolCalls = response.choices[0].message.tool_calls;

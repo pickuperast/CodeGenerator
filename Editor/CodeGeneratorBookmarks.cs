@@ -17,6 +17,13 @@ namespace Sanat.CodeGenerator.Bookmarks
         private ReorderableList bookmarkList;
         private Texture2D bookmarkIcon;
         CodeGenerator codeGenerator;
+        private string _className;
+        public string ClassName {
+            get {
+                if (string.IsNullOrEmpty(_className)) _className = $"<color=#56dd12>CodeGeneratorBookmarks</color>";
+                return _className;
+            }
+        }
 
         public event Action OnBookmarkSaved;
         public event System.Action<Bookmark> OnBookmarkLoaded;
@@ -81,7 +88,7 @@ namespace Sanat.CodeGenerator.Bookmarks
                 }
                 catch (Exception e)
                 {
-                    Debug.LogWarning($"Error in bookmark list: {e.Message}. Reinitializing...");
+                    Debug.LogWarning($"{ClassName} Error in bookmark list: {e.Message}. Reinitializing...");
                     InitializeReorderableList();
                 }
             }
@@ -130,10 +137,12 @@ namespace Sanat.CodeGenerator.Bookmarks
             float iconWidth = 20;
             float buttonWidth = 60;
             float spacing = 5;
-
+            string tooltipSeparator = bookmark.SelectedClassNames.Count > 10 ? ", " : "\n";
+            string tooltip = $"[{bookmark.SelectedClassNames.Count}]: ";
+            tooltip += string.Join(tooltipSeparator, bookmark.SelectedClassNames);
             EditorGUI.LabelField(
                 new Rect(rect.x + iconWidth + spacing, rect.y, rect.width - iconWidth - buttonWidth * 3 - spacing * 4, rect.height),
-                new GUIContent(bookmark.Name, bookmark.Task)
+                new GUIContent(bookmark.Name, tooltip)
             );
 
             if (GUI.Button(new Rect(rect.xMax - buttonWidth * 3 - spacing * 2, rect.y, buttonWidth, rect.height), "Add"))
@@ -170,7 +179,7 @@ namespace Sanat.CodeGenerator.Bookmarks
             bookmarks.Add(bookmark);
             SaveBookmarksToPrefs();
 
-            Debug.Log($"[Bookmark Manager] New bookmark saved: {bookmark.Name}. "+
+            Debug.Log($"{ClassName} New bookmark saved: {bookmark.Name}. "+
                       $"Selected Classes ({bookmark.SelectedClassNames.Count}): "+
                       $"{string.Join(", ", bookmark.SelectedClassNames)}; "+
                       $"Task: {bookmark.Task}; Category: {bookmark.Category}");
@@ -208,8 +217,15 @@ namespace Sanat.CodeGenerator.Bookmarks
                 {
                     if (bkm.Name == bookmark.Name)
                     {
-                        codeGenerator.selectedClassNames.AddRange(bkm.SelectedClassNames);
-                        codeGenerator.selectedClassNames = new List<string>(codeGenerator.selectedClassNames.Distinct());
+                        var selectedClasses = codeGenerator.selectedClassNames;
+                        var oldAmount = selectedClasses.Count;
+                        var oldClasses = selectedClasses;
+                        selectedClasses.AddRange(bkm.SelectedClassNames);
+                        codeGenerator.selectedClassNames = new List<string>(selectedClasses.Distinct());
+                        selectedClasses = codeGenerator.selectedClassNames;
+                        var newAmount = selectedClasses.Count;
+                        var addedClasses = selectedClasses.Except(oldClasses).ToList();
+                        Debug.Log($"{ClassName} Added {newAmount-oldAmount} classes to selection: {string.Join(", ", addedClasses)}");
                         break;
                     }
                 }

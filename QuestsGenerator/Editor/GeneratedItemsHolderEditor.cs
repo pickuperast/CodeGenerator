@@ -16,28 +16,43 @@ public class GeneratedItemsHolderEditor : Editor
     private const int ItemsPerPage = 10;
     private int _currentPage;
     private int _totalPages;
+    private bool _showQuestGiverFaction = true;
 
     public override void OnInspectorGUI()
     {
         GeneratedItemsHolder generatedItemsHolder = (GeneratedItemsHolder)target;
+
         EditorGUILayout.Space();
         EditorGUILayout.LabelField("Global Prompt Suffixes", EditorStyles.boldLabel);
-        
+
         generatedItemsHolder.GlobalPositivePromptSuffix = EditorGUILayout.TextField("Global Positive Suffix", generatedItemsHolder.GlobalPositivePromptSuffix);
         generatedItemsHolder.GlobalNegativePromptSuffix = EditorGUILayout.TextField("Global Negative Suffix", generatedItemsHolder.GlobalNegativePromptSuffix);
         generatedItemsHolder.ImagesFolder = EditorGUILayout.TextField("Images Folder", generatedItemsHolder.ImagesFolder);
-        
+
         EditorGUILayout.Space();
         DrawPaginationControls(generatedItemsHolder);
-        DrawItemsTable(generatedItemsHolder);
+
+        _showQuestGiverFaction = EditorGUILayout.Foldout(_showQuestGiverFaction, "Quest Giver Faction");
+
+        if (_showQuestGiverFaction)
+        {
+            DrawItemsTableWithFaction(generatedItemsHolder);
+        }
+        else
+        {
+            DrawItemsTable(generatedItemsHolder);
+        }
+
         DrawPaginationControls(generatedItemsHolder);
+
         EditorGUILayout.Space();
-        
+
         EditorGUILayout.BeginHorizontal();
         _fromIndex = Mathf.Max(0, EditorGUILayout.IntField("From Index", _fromIndex));
         int maxIndex = generatedItemsHolder.GeneratedItems.Count - 1;
         _toIndex = EditorGUILayout.IntSlider("To Index", _toIndex, _fromIndex, maxIndex);
         EditorGUILayout.EndHorizontal();
+
         if (_toIndex < _fromIndex)
         {
             _toIndex = _fromIndex;
@@ -47,55 +62,108 @@ public class GeneratedItemsHolderEditor : Editor
         {
             CleanUpItems(generatedItemsHolder);
         }
+
         if (GUILayout.Button("Export Icon Prompts to Text File"))
         {
             ExportIconPromptsToTextFile(generatedItemsHolder);
         }
+
         if (GUILayout.Button("Copy and Apply Images"))
         {
             CopyAndApplyImages(generatedItemsHolder);
         }
+
+        if (GUILayout.Button("Delete Items Range"))
+        {
+            DeleteItemsRange(generatedItemsHolder);
+        }
+
         if (GUI.changed)
         {
             EditorUtility.SetDirty(generatedItemsHolder);
         }
     }
 
+    private void DrawItemsTableWithFaction(GeneratedItemsHolder holder)
+    {
+        _scrollPosition = EditorGUILayout.BeginScrollView(_scrollPosition);
+        int startIndex = _currentPage * ItemsPerPage;
+        int endIndex = Mathf.Min(startIndex + ItemsPerPage, holder.GeneratedItems.Count);
+
+        for (int i = startIndex; i < endIndex; i++)
+        {
+            EditorGUILayout.BeginHorizontal();
+            GeneratedItemDefinition item = null;
+            if (GUILayout.Button(i.ToString(), GUILayout.Width(30)))
+            {
+                item = holder.GeneratedItems[i];
+                if (item != null)
+                {
+                    EditorGUIUtility.PingObject(item);
+                    Selection.activeObject = item;
+                }
+            }
+
+            item = holder.GeneratedItems[i];
+            if (item != null)
+            {
+                item.Icon = (Sprite)EditorGUILayout.ObjectField(item.Icon, typeof(Sprite), false, GUILayout.Width(IconSize), GUILayout.Height(IconSize));
+
+                EditorGUILayout.BeginVertical();
+                item.ItemName = EditorGUILayout.TextField(item.ItemName, GUILayout.Width(IconSize * 4));
+                item.ItemDescription = EditorGUILayout.TextArea(item.ItemDescription, GUILayout.Width(IconSize * 4), GUILayout.Height(IconSize - EditorGUIUtility.singleLineHeight), GUILayout.ExpandHeight(true));
+                EditorGUILayout.EndVertical();
+                
+                EditorGUILayout.BeginVertical();
+                EditorGUILayout.LabelField("Faction:", EditorStyles.boldLabel);
+                item.QuestGiverFaction = EditorGUILayout.TextField(item.QuestGiverFaction, GUILayout.Width(IconSize * 3));
+                EditorGUILayout.EndVertical();
+                
+                if (GUILayout.Button("X", GUILayout.Width(20), GUILayout.Height(20)))
+                {
+                    DeleteGeneratedItem(holder, item, i);
+                }
+            }
+
+            EditorGUILayout.EndHorizontal();
+            EditorGUILayout.Space(5);
+        }
+
+        EditorGUILayout.EndScrollView();
+    }
+
     private void DrawPaginationControls(GeneratedItemsHolder holder)
     {
         _totalPages = Mathf.CeilToInt(holder.GeneratedItems.Count / (float)ItemsPerPage);
-        
+
         EditorGUILayout.BeginHorizontal();
-        
+
         if (GUILayout.Button("<<", GUILayout.Width(30)))
         {
             _currentPage = 0;
         }
-        
+
         if (GUILayout.Button("<", GUILayout.Width(30)))
         {
             _currentPage = Mathf.Max(0, _currentPage - 1);
         }
-
         GUILayout.Label($"Page {_currentPage + 1} of {_totalPages}", EditorStyles.centeredGreyMiniLabel);
-
         if (GUILayout.Button(">", GUILayout.Width(30)))
         {
             _currentPage = Mathf.Min(_totalPages - 1, _currentPage + 1);
         }
-        
+
         if (GUILayout.Button(">>", GUILayout.Width(30)))
         {
             _currentPage = _totalPages - 1;
         }
-        
+
         EditorGUILayout.EndHorizontal();
     }
 
     private void DrawItemsTable(GeneratedItemsHolder holder)
     {
         _scrollPosition = EditorGUILayout.BeginScrollView(_scrollPosition);
-
         int startIndex = _currentPage * ItemsPerPage;
         int endIndex = Mathf.Min(startIndex + ItemsPerPage, holder.GeneratedItems.Count);
 
@@ -104,23 +172,21 @@ public class GeneratedItemsHolderEditor : Editor
             EditorGUILayout.BeginHorizontal();
 
             EditorGUILayout.LabelField(i.ToString(), GUILayout.Width(30));
+
             var item = holder.GeneratedItems[i];
             if (item != null)
             {
                 item.Icon = (Sprite)EditorGUILayout.ObjectField(item.Icon, typeof(Sprite), false, GUILayout.Width(IconSize), GUILayout.Height(IconSize));
                 EditorGUILayout.BeginVertical();
                 item.ItemName = EditorGUILayout.TextField(item.ItemName, GUILayout.Width(IconSize * 4));
-                // text should be wrapped to several lines
                 item.ItemDescription = EditorGUILayout.TextArea(item.ItemDescription, GUILayout.Width(IconSize * 4), GUILayout.Height(IconSize - EditorGUIUtility.singleLineHeight), GUILayout.ExpandHeight(true));
                 EditorGUILayout.EndVertical();
-
-                // Add delete button
                 if (GUILayout.Button("X", GUILayout.Width(20), GUILayout.Height(20)))
                 {
                     DeleteGeneratedItem(holder, item, i);
                 }
             }
-            
+
             EditorGUILayout.EndHorizontal();
             EditorGUILayout.Space(5);
         }
@@ -135,7 +201,6 @@ public class GeneratedItemsHolderEditor : Editor
             AssetDatabase.StartAssetEditing();
             try
             {
-                // First delete the sprite if it exists
                 if (item.Icon != null)
                 {
                     string spritePath = AssetDatabase.GetAssetPath(item.Icon);
@@ -144,21 +209,15 @@ public class GeneratedItemsHolderEditor : Editor
                         AssetDatabase.DeleteAsset(spritePath);
                     }
                 }
-
-                // Then delete the item asset
                 string itemPath = AssetDatabase.GetAssetPath(item);
                 if (!string.IsNullOrEmpty(itemPath))
                 {
                     AssetDatabase.DeleteAsset(itemPath);
                 }
-
-                // Remove from list
                 holder.GeneratedItems.RemoveAt(index);
-
-                // Update pagination if necessary
                 int maxPage = Mathf.CeilToInt(holder.GeneratedItems.Count / (float)ItemsPerPage) - 1;
                 _currentPage = Mathf.Min(_currentPage, maxPage);
-            
+                            
                 EditorUtility.SetDirty(holder);
                 AssetDatabase.SaveAssets();
             }
@@ -173,23 +232,19 @@ public class GeneratedItemsHolderEditor : Editor
     private async void CopyAndApplyImages(GeneratedItemsHolder generatedItemsHolder)
     {
         if (Application.isPlaying) return;
-
         string holderPath = AssetDatabase.GetAssetPath(generatedItemsHolder);
         string targetDirectory = Path.Combine(Path.GetDirectoryName(holderPath), "Images").Replace("\\", "/");
         string sourceDirectory = generatedItemsHolder.ImagesFolder.Replace("\\", "/");
-
         if (!Directory.Exists(sourceDirectory))
         {
             Debug.LogError($"Source directory not found: {sourceDirectory}");
             return;
         }
-
         if (!Directory.Exists(targetDirectory))
         {
             Directory.CreateDirectory(targetDirectory);
             AssetDatabase.Refresh();
         }
-
         var validExtensions = new[] { ".png", ".jpg", ".jpeg" };
         int imagesCount = _toIndex - _fromIndex + 1;
         
@@ -199,14 +254,11 @@ public class GeneratedItemsHolderEditor : Editor
             .OrderByDescending(f => f.CreationTime)
             .Take(imagesCount)
             .ToList();
-
         if (!imageFiles.Any())
         {
             Debug.LogError("No valid image files found in source directory");
             return;
         }
-
-        // Clear existing images
         string[] existingFiles = Directory.GetFiles(targetDirectory, "item_icon_*.*");
         foreach (string file in existingFiles)
         {
@@ -217,7 +269,6 @@ public class GeneratedItemsHolderEditor : Editor
                 AssetDatabase.DeleteAsset(assetPath);
             }
         }
-
         AssetDatabase.Refresh();
         
         Dictionary<string, (string itemPath, string sourceFile)> fileMappings = new ();
@@ -246,14 +297,12 @@ public class GeneratedItemsHolderEditor : Editor
                     Debug.LogError($"Source file: {mapping.Value.sourceFile}");
                     continue;
                 }
-
                 var item = AssetDatabase.LoadAssetAtPath<GeneratedItemDefinition>(itemPath);
                 if (item == null)
                 {
                     Debug.LogError($"Failed to load item from file: {itemPath}");
                     continue;
                 }
-
                 item.Icon = sprite;
                 EditorUtility.SetDirty(item);
             }
@@ -284,20 +333,20 @@ public class GeneratedItemsHolderEditor : Editor
                         var sourceFile = imageFiles[processedImages].FullName;
                         string fileName = $"item_icon_{currentIndex}.png";
                         string targetFile = Path.Combine(targetDirectory, fileName).Replace("\\", "/");
-                    
+                        
                         if (File.Exists(targetFile))
                         {
                             File.Delete(targetFile);
                         }
-                    
+                        
                         File.Copy(sourceFile, targetFile, true);
-                    
+                        
                         string assetPath = targetFile;
                         if (assetPath.StartsWith(Application.dataPath))
                         {
                             assetPath = "Assets" + assetPath.Substring(Application.dataPath.Length);
                         }
-                    
+                        
                         fileMappings[assetPath] = (AssetDatabase.GetAssetPath(item), sourceFile);
                         processedImages++;
                     }
@@ -309,7 +358,8 @@ public class GeneratedItemsHolderEditor : Editor
         {
             Console.WriteLine(e.Message);
             throw;
-        }finally
+        }
+        finally
         {
             AssetDatabase.StopAssetEditing();
         }
@@ -337,7 +387,6 @@ public class GeneratedItemsHolderEditor : Editor
                     importer.npotScale = TextureImporterNPOTScale.None;
                     importer.isReadable = false;
                     importer.spriteImportMode = SpriteImportMode.Single;
-
                     TextureImporterPlatformSettings settings = new TextureImporterPlatformSettings
                     {
                         maxTextureSize = 512,
@@ -346,7 +395,6 @@ public class GeneratedItemsHolderEditor : Editor
                         overridden = true
                     };
                     importer.SetPlatformTextureSettings(settings);
-
                     EditorUtility.SetDirty(importer);
                     importer.SaveAndReimport();
                 }
@@ -381,7 +429,6 @@ public class GeneratedItemsHolderEditor : Editor
                     itemsToRemove.Add(item);
                 }
             }
-
             AssetDatabase.StartAssetEditing();
             try
             {
@@ -408,7 +455,6 @@ public class GeneratedItemsHolderEditor : Editor
             string directory = Path.GetDirectoryName(path);
             string fileName = $"IconPrompts_{_fromIndex}-{_toIndex}.txt";
             string filePath = Path.Combine(directory, fileName);
-
             using (StreamWriter writer = new StreamWriter(filePath))
             {
                 int currentIndex = 0;
@@ -437,6 +483,17 @@ public class GeneratedItemsHolderEditor : Editor
             }
             
             File.WriteAllText(filePath, File.ReadAllText(filePath).TrimEnd('\n'));
+            AssetDatabase.Refresh();
+        }
+    }
+
+    private void DeleteItemsRange(GeneratedItemsHolder generatedItemsHolder)
+    {
+        if (!Application.isPlaying)
+        {
+            generatedItemsHolder.DeleteItemsRange(_fromIndex, _toIndex);
+            EditorUtility.SetDirty(generatedItemsHolder);
+            AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
         }
     }
