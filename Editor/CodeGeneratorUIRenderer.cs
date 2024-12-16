@@ -13,6 +13,8 @@ public class CodeGeneratorUIRenderer
 {
     private bool isSelectedClassesVisible = true;
     private bool isGeneratedPromptVisible = true;
+    private bool isGenerateCodeButtonDisabled = false;
+    private double generateCodeButtonDisableTime = 0;
 
     public void RenderMainUI(CodeGenerator codeGenerator)
     {
@@ -85,13 +87,18 @@ public class CodeGeneratorUIRenderer
             codeGenerator.bookmarkManager.DrawBookmarksUI(codeGenerator);
 
         RenderGeneratedPrompt(codeGenerator);
+        EditorGUILayout.Space();
 
         if (codeGenerator.isButtonAnimating)
         {
             codeGenerator.Repaint();
         }
+        
+        if (isGenerateCodeButtonDisabled)
+        {
+            codeGenerator.Repaint();
+        }
 
-        EditorGUILayout.Space();
     }
 
     private void RenderSelectedClassesColumn(CodeGenerator codeGenerator, int column)
@@ -178,10 +185,22 @@ public class CodeGeneratorUIRenderer
             Rect progressRect = GUILayoutUtility.GetRect(100, 20);
             EditorGUI.ProgressBar(progressRect, codeGenerator.generationProgress, $"Generating... {codeGenerator.generationProgress * 100:F0}%");
         }
+        
+        if (isGenerateCodeButtonDisabled && EditorApplication.timeSinceStartup >= generateCodeButtonDisableTime)
+        {
+            isGenerateCodeButtonDisabled = false;
+        }
+
+        // Handle the Generate Code button
+        GUI.enabled = !isGenerateCodeButtonDisabled;
         if (GUILayout.Button("Generate Code"))
         {
             codeGenerator.ExecGenerateCode();
+            isGenerateCodeButtonDisabled = true;
+            generateCodeButtonDisableTime = EditorApplication.timeSinceStartup + 3.0;
         }
+        GUI.enabled = true;
+        
         if (GUILayout.Button("Stop"))
         {
             codeGenerator.isGeneratingCode = false;
@@ -250,8 +269,8 @@ public class CodeGeneratorUIRenderer
                 case AbstractAgentHandler.ApiProviders.Gemini:
                     DrawModelSelection("Gemini Model", ref agentEntry.Value.ModelName, 
                         new string[] {
-                            ApiGeminiModels.Pro,
-                            ApiGeminiModels.Flash
+                            Sanat.ApiGemini.Model.Pro.Name,
+                            Sanat.ApiGemini.Model.Flash.Name
                         });
                     break;
             }

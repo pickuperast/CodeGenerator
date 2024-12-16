@@ -38,7 +38,7 @@ namespace Sanat.CodeGenerator.Agents
             _agentCodeMerger = codeMerger;
         }
         
-        protected override string GetGeminiModel() => ApiGeminiModels.Pro;
+        protected override string GetGeminiModel() => ApiGemini.Model.Pro.Name;
 
         public override void Handle(string input)
         {
@@ -78,7 +78,7 @@ namespace Sanat.CodeGenerator.Agents
             string promptLocation = Application.dataPath + $"{PROMPTS_FOLDER_PATH}{PROMPT_VALIDATE_SOLUTION_USING_TOOL}";
             string agentLogName = $"<color=yellow>{Name}</color>";
             string question = JsonConvert.SerializeObject(fileContents);
-            _modelName = Model.GPT4omini.Name;//ApiGroqModels.Llama3_70b_8192_tool.Name;
+            _modelName = ApiOpenAI.Model.GPT4omini.Name;//ApiGroqModels.Llama3_70b_8192_tool.Name;
             BotParameters botParameters = new BotParameters(question, ApiProviders.OpenAI, .2f, null, _modelName, true);
             var openaiTools = new ApiOpenAI.Tool[] { new ("function", GetFunctionData_OpenaiValidateSolution()) };
             botParameters.isToolUse = true;

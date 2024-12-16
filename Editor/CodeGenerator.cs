@@ -25,7 +25,8 @@ namespace Sanat.CodeGenerator
         private CodeGeneratorUIRenderer _uiRenderer;
         private CodeGeneratorPreparationHelper _preparationHelper;
         private RagProcessor _ragProcessor;
- 
+        private static bool _isFirstOnEnableCall = true;
+        
         // UI State
         public Vector2 scrollPosition;
         public Vector2 taskScrollPosition;
@@ -49,7 +50,7 @@ namespace Sanat.CodeGenerator
         public float generationProgress;
         private float lastProgressUpdateTime;
         private float targetProgress;
-        private float progressSpeed = 0.00001f;
+        private float progressSpeed = .001f;
         private const int MAX_ALLOWED_VALIDITY_CHECKINGS = 3;
         private int _currentRun;
 
@@ -72,6 +73,7 @@ namespace Sanat.CodeGenerator
         private const string PROMPTS_SAVE_FOLDER = "Sanat/CodeGenerator/Prompts";
         public const string PREFS_GEMINI_PROJECT_NAME = "GeminiProjectName";
         public const string PREFS_KEY_TASK = "Task";
+        private const string PREFS_KEY_LAST_UPDATE_TIME = "LastUpdateTime";
         public const string INCLUDED_FOLDERS_PREFS_KEY = "IncludedFolders";
 
         // Managers
@@ -93,15 +95,22 @@ namespace Sanat.CodeGenerator
         private async void OnEnable()
         {
             InitializeManagers();
-            // if (IsFirstLaunch())
+            
+            if (_isFirstOnEnableCall)
+            {
                 await LoadSettingsDelayedAsync();
-            // else
-            //     _settingsManager.LoadSettings(this);
+                _isFirstOnEnableCall = false;
+            }
+            else
+            {
+                await _settingsManager.LoadSettings(this);
+            }
         }
-        
+
         private async UniTask LoadSettingsDelayedAsync()
         {
-            await UniTask.Delay(System.TimeSpan.FromSeconds(5), DelayType.DeltaTime, PlayerLoopTiming.Update);
+            //if last update time greater than 2 hours ago then set delay time to 10, else to 0
+            await UniTask.Delay(System.TimeSpan.FromSeconds(10), DelayType.DeltaTime, PlayerLoopTiming.Update);
             await _settingsManager.LoadSettings(this);
         }
         
@@ -179,12 +188,13 @@ namespace Sanat.CodeGenerator
             var apiKeys = new AbstractAgentHandler.ApiKeys(openaiApiKey, antrophicApiKey, groqApiKey, geminiApiKey);
     
             // Initialize agents with appropriate settings
+            var agentCodeHighLevelArchitector = new AgentCodeHighLevelArchitector(apiKeys, taskInput, includedCode);
             var agentCodeArchitector = new AgentCodeArchitector(apiKeys, taskInput, includedCode);
             var architectorSettings = agentModelSettings["AgentCodeArchitector"];
             agentCodeArchitector.ChangeLLM(architectorSettings.ApiProvider, architectorSettings.ModelName);
     
             // Convert paths to dictionary for project code
-            List<AbstractAgentHandler.FileContent> projectCodeLight = new ();
+            List<AbstractAgentHandler.FileContent> projectCodeScope = new ();
             foreach(var path in projectCodePaths)
             {
                 if(File.Exists(path))
@@ -192,18 +202,17 @@ namespace Sanat.CodeGenerator
                     AbstractAgentHandler.FileContent fileContent = new ();
                     fileContent.FilePath = path;
                     fileContent.Content = File.ReadAllText(path);
-                    projectCodeLight.Add(fileContent);
+                    projectCodeScope.Add(fileContent);
                 }
             }
     
-            var agentSolutionToDicts = new AgentSolutionToDict(apiKeys, projectCodePaths);
-            var agentCodeMerger = new AgentCodeMerger(apiKeys, projectCodeLight, projectCodePaths); // Using the correct constructor
+            var agentCodeMerger = new AgentCodeMerger(apiKeys, projectCodeScope, projectCodePaths); // Using the correct constructor
             // Set up callbacks and chain
-            SetupArchitectorCallbacks(agentCodeArchitector, agentCodeMerger, apiKeys, agentSolutionToDicts, includedCode);
+            SetupArchitectorCallbacks(agentCodeArchitector, agentCodeMerger, apiKeys, agentCodeHighLevelArchitector, includedCode);
     
             // Start the generation process with initial prompt
-            agentCodeArchitector.SetNext(null);
-            agentCodeArchitector.Handle(generatedPrompt);
+            agentCodeHighLevelArchitector.SetNext(null);
+            agentCodeHighLevelArchitector.Handle(generatedPrompt);
         }
         #endregion
 
@@ -211,19 +220,29 @@ namespace Sanat.CodeGenerator
             AgentCodeArchitector agentCodeArchitector,
             AgentCodeMerger agentCodeMerger, 
             AbstractAgentHandler.ApiKeys apiKeys,
-            AbstractAgentHandler agentSolutionToDicts,
+            AgentCodeHighLevelArchitector agentCodeHighLevelArchitector,
             string includedCode)
         {
-            agentCodeArchitector.OnFileContentProvided += (List<AbstractAgentHandler.FileContent> fileContents) =>
+            UpdateProgress(0.1f);
+            agentCodeHighLevelArchitector.OnTextAnswerProvided += (string techSpec) =>
             {
-                AgentCodeValidator agentValidator = new AgentCodeValidator(apiKeys, taskInput, classToPath, includedCode, "", agentCodeMerger as AgentCodeMerger);
-                
-                agentValidator.ValidateSolution(fileContents, (string comment) =>
+                UpdateProgress(0.3f);
+                agentCodeArchitector.ChangeTask(techSpec);
+                agentCodeArchitector.OnFileContentProvided += (List<AbstractAgentHandler.FileContent> fileContents) =>
                 {
-                    string architectorSolution = JsonConvert.SerializeObject(fileContents);
-                    NextStepsAfterArchitector(comment, agentCodeMerger, apiKeys, architectorSolution, 
-                        agentSolutionToDicts, agentCodeArchitector, includedCode);
-                });
+                    AgentCodeValidator agentValidator = new AgentCodeValidator(apiKeys, taskInput, classToPath, includedCode, "", agentCodeMerger as AgentCodeMerger);
+            
+                    UpdateProgress(0.8f);
+                    agentValidator.ValidateSolution(fileContents, (string comment) =>
+                    {
+                        string architectorSolution = JsonConvert.SerializeObject(fileContents);
+                        NextStepsAfterArchitector(comment, agentCodeMerger, apiKeys, architectorSolution, 
+                            agentCodeHighLevelArchitector, agentCodeArchitector, includedCode);
+                        UpdateProgress(1f);
+                    });
+                };
+                agentCodeArchitector.SetNext(null);
+                agentCodeArchitector.Handle(techSpec);
             };
             
             // Configure architect's completion handling
@@ -235,7 +254,7 @@ namespace Sanat.CodeGenerator
                 agentValidator.OnComplete += (string validationResult) =>
                 {
                     NextStepsAfterArchitector(validationResult, agentCodeMerger, apiKeys, result, 
-                        agentSolutionToDicts, agentCodeArchitector, includedCode);
+                        agentCodeHighLevelArchitector, agentCodeArchitector, includedCode);
                 };
                 // Start validation
                 agentValidator.Handle(result);
@@ -264,7 +283,7 @@ namespace Sanat.CodeGenerator
             AbstractAgentHandler agentCodeMerger, 
             AbstractAgentHandler.ApiKeys apiKeys, 
             string architectorSolution, 
-            AbstractAgentHandler agentSolutionToDicts,
+            AbstractAgentHandler agentCodeHighLevelArchitector,
             AgentCodeArchitector agentCodeArchitector,
             string includedCode) 
         {
@@ -282,7 +301,7 @@ namespace Sanat.CodeGenerator
                 {
                     UpdateProgress(0.4f);
                     //Debug.Log($"Current run: {_currentRun}; model: {Sanat.ApiAnthropic.Model.Claude35Latest}");
-                    Debug.Log($"Current run: {_currentRun}; model: {ApiGeminiModels.Pro}");
+                    Debug.Log($"Current run: {_currentRun}; model: {ApiGemini.Model.Pro.Name}");
                     //agentCodeArchitector.ChangeLLM(AbstractAgentHandler.ApiProviders.Gemini, ApiGeminiModels.Pro);
                     //Debug.Log($"Current run: {_currentRun}; model: {Model.GPT4o_16K.Name}");
                     //agentCodeArchitector.ChangeLLM(AbstractAgentHandler.ApiProviders.OpenAI, Model.GPT4o_16K.Name);
@@ -290,12 +309,12 @@ namespace Sanat.CodeGenerator
                 {
                     UpdateProgress(0.6f);
                      //Debug.Log($"Current run: {_currentRun}; model: {Sanat.ApiAnthropic.Model.Claude35Latest}");
-                    Debug.Log($"Current run: {_currentRun}; model: {Model.GPT4o1mini.Name}");
+                    Debug.Log($"Current run: {_currentRun}; model: {ApiOpenAI.Model.GPT4o1mini.Name}");
                     //agentCodeArchitector.ChangeLLM(AbstractAgentHandler.ApiProviders.OpenAI, Model.GPT4o1mini.Name);
                 }else if (_currentRun == 4)
                 {
                     UpdateProgress(0.8f);
-                     Debug.Log($"Current run: {_currentRun}; model: {Model.GPT4o1mini.Name}");
+                     Debug.Log($"Current run: {_currentRun}; model: {ApiOpenAI.Model.GPT4o1mini.Name}");
                     //agentCodeArchitector.ChangeLLM(AbstractAgentHandler.ApiProviders.OpenAI, Model.GPT4o1mini.Name);
                 }
                 
@@ -307,7 +326,7 @@ namespace Sanat.CodeGenerator
                     {
                         Debug.Log($"{agentValidator.Name} OnComplete: {validationResult}");
                         NextStepsAfterArchitector(validationResult, agentCodeMerger, 
-                            apiKeys, feedbackResult, agentSolutionToDicts, 
+                            apiKeys, feedbackResult, agentCodeHighLevelArchitector, 
                             agentCodeArchitector, includedCode);
                     };
                     agentValidator.Handle(feedbackResult);
@@ -383,14 +402,11 @@ namespace Sanat.CodeGenerator
         public void UpdateProgressBar()
         {
             float currentTime = (float)EditorApplication.timeSinceStartup;
-            if (currentTime - lastProgressUpdateTime >= 0.02f)
+            if (currentTime - lastProgressUpdateTime >= 0.1f)
             {
-                if (generationProgress < targetProgress)
-                {
-                    generationProgress = Mathf.Min(generationProgress + progressSpeed, targetProgress);
-                    lastProgressUpdateTime = currentTime;
-                    Repaint();
-                }
+                generationProgress = Mathf.Max(generationProgress + progressSpeed, targetProgress);
+                lastProgressUpdateTime = currentTime;
+                Repaint();
             }
         }
         #endregion
@@ -597,9 +613,9 @@ namespace Sanat.CodeGenerator
         {
             const string key = "CODE_GENERATOR_FIRST_LAUNCH";
             bool isFirstLaunch = EditorPrefs.GetInt(key, 1) == 1;
-            Debug.Log($"{PLUGIN_NAME} Detected First launch");
             if (isFirstLaunch)
             {
+                Debug.Log($"{PLUGIN_NAME} Detected First launch");
                 EditorPrefs.SetInt(key, 0);
             }
             return isFirstLaunch;

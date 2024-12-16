@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using Newtonsoft.Json;
+using Sanat.CodeGenerator.Common;
 using UnityEngine;
 using UnityEngine.Networking;
 using UnityEngine.Serialization;
@@ -221,21 +222,21 @@ namespace Sanat.ApiOpenAI
                 if (!success) Debug.Log($"{webRequest.error}\n{webRequest.downloadHandler.text}");
                 webRequest.Dispose();
                 webRequest = null;
-                var elapsedTime = (DateTime.Now - startTime).Seconds;
+                var elapsedTime = (DateTime.Now - startTime).TotalSeconds;
                 if (!string.IsNullOrEmpty(text))
                 {
                     var responseData = JsonUtility.FromJson<CompletionResponse>(text);
                     callback?.Invoke(responseData);
             
-                    var tokensPrompt = responseData.usage.prompt_tokens;
-                    var tokensCompletion = responseData.usage.completion_tokens;
-                    var tokensTotal = responseData.usage.total_tokens;
+                    var tokensPrompt = responseData.usage.prompt_tokens / 1000f;
+                    var tokensCompletion = responseData.usage.completion_tokens / 1000f;
+                    var tokensTotal = responseData.usage.total_tokens / 1000f;
                     var prompt_price = GetPromptPrice(model.Name);
                     var response_price = GetResponsePrice(model.Name);
                     var costPrompt = tokensPrompt * prompt_price / 1000;
                     var costResponse = tokensCompletion * response_price / 1000;
                     var cost = costPrompt + costResponse;
-                    Debug.Log($"{model.Name} [<color=orange>{elapsedTime}</color> sec] Usage(<color=green>{cost.ToString("F3")}</color>$): prompt_tokens: {tokensPrompt}; completion_tokens: {tokensCompletion}; total_tokens: {tokensTotal}");
+                    Debug.Log($"{model.Name} [<color=orange>{elapsedTime:F0}</color> sec] Usage(<color=green>{cost.ToString("F3")}</color>$): {CommonForAnyApi.OUTPUT_TOKENS_SYMBOL} {tokensPrompt:F1}K; {CommonForAnyApi.INPUT_TOKENS_SYMBOL} {tokensCompletion:F1}K; total_tokens: {tokensTotal:F1}K");
                 }
             };
 

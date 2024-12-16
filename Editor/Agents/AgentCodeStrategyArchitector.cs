@@ -20,7 +20,7 @@ namespace Sanat.CodeGenerator.Agents
             "PromptAgentStrategyArchitector.md";
         
         protected override string GetGeminiModel() => 
-            ApiGeminiModels.Flash;
+            ApiGemini.Model.Flash.Name;
         
         public AgentCodeStrategyArchitector(ApiKeys apiKeys, string task, string includedCode)
         {
@@ -52,7 +52,7 @@ namespace Sanat.CodeGenerator.Agents
                 OnComplete?.Invoke(result);
                 SaveResultToFile(result);
             });
-            botParameters.geminiToolRequest = tools;
+            //botParameters.geminiToolRequest = tools;
             AskBot(botParameters);
         }
         

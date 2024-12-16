@@ -1,4 +1,4 @@
-// Copyright (c) Sanat. All rights reserved.
+﻿// Copyright (c) Sanat. All rights reserved.
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -17,12 +17,14 @@ using Newtonsoft.Json;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
+using ChatRequest = Sanat.ApiGemini.ChatRequest;
 
 namespace Sanat.CodeGenerator.Agents
 {
     public abstract class AbstractAgentHandler
     {
         public string Name { get; set; }
+        public string DebugName { get; set; }
         public string Description { get; set; }
         public string[] Tools { get; set; }
         public float Temperature { get; set; }
@@ -36,10 +38,11 @@ namespace Sanat.CodeGenerator.Agents
         public const string PROMPTS_FOLDER_PATH = "/Sanat/CodeGenerator/Editor/Agents/Prompts/";
         public const string KEY_FIGURE_OPEN = "[figureOpen]";
         public const string KEY_FIGURE_CLOSE = "[figureClose]";
-        public enum ApiProviders { OpenAI, Anthropic, Groq, Gemini }
 
+        public enum ApiProviders { OpenAI, Anthropic, Groq, Gemini }
         public readonly string CSV_SEPARATOR = "[CSV_SEPARATOR]";
         public enum Brackets { round, square, curly, angle }
+
         protected bool _isModelChanged;
         protected bool _isChangedModelOpenai;
         protected Sanat.ApiOpenAI.Model _newOpenaiModel;
@@ -48,8 +51,7 @@ namespace Sanat.CodeGenerator.Agents
         protected string _newGeminiModel;
         protected string _modelName;
         public int ConversationHistoryMemory { get; set; } = 1;
-
-        protected  HttpClient httpClient;
+        protected HttpClient httpClient;
 
         public void SaveResultToFile(string result)
         {
@@ -71,7 +73,6 @@ namespace Sanat.CodeGenerator.Agents
         }
 
         protected AbstractAgentHandler _nextHandler;
-
         protected abstract string PromptFilename();
 
         protected void StoreOpenAIKey(string key)
@@ -83,7 +84,7 @@ namespace Sanat.CodeGenerator.Agents
 
         protected virtual ApiOpenAI.Model GetModel() => ApiOpenAI.Model.GPT4omini;
         
-        protected virtual string GetGeminiModel() => ApiGeminiModels.Flash;
+        protected virtual string GetGeminiModel() => ApiGemini.Model.Flash.Name;
         
         public static string LoadPrompt(string path)
         {
@@ -91,17 +92,16 @@ namespace Sanat.CodeGenerator.Agents
             {
                 try
                 {
-                    //Debug.Log($"Successfully loaded instructions from: {path}");
                     return File.ReadAllText(path);
                 }
                 catch (Exception e)
                 {
-                    Debug.LogError($"Error reading .md file: {e.Message}");
+                    Debug.LogError($"Error reading .md file: {{e.Message}}");
                 }
             }
             else
             {
-                Debug.LogError($"The .md file does not exist in the specified path.[{path}]");
+                Debug.LogError($"The .md file does not exist in the specified path.[{{path}}]");
             }
             return String.Empty;
         }
@@ -120,8 +120,6 @@ namespace Sanat.CodeGenerator.Agents
                 return;
             }
             OnComplete?.Invoke(input);
-            // if (_nextHandler != null)
-            //     _nextHandler.Handle(input);
         }
 
         public class BotParameters
@@ -134,7 +132,7 @@ namespace Sanat.CodeGenerator.Agents
             public Action<string> onComplete;
             public Action<ToolCalls> onOpenaiToolComplete;
             public Action<CompletionResponse> onOpenaiChatResponseComplete;
-            public ToolRequest geminiToolRequest;
+            public ApiGemini.ChatRequest geminiRequest;
             public ApiOpenAI.Tool[] openaiTools;
             
             public ApiAntrophicData.ChatRequest antrophicRequest;
@@ -161,8 +159,8 @@ namespace Sanat.CodeGenerator.Agents
                 Apikeys.groq,
                 model,
                 botParameters.temp,
-                1, 
-                0, 
+                1,
+                0,
                 0,
                 model.MaxOutputTokens,
                 messages,
@@ -180,8 +178,8 @@ namespace Sanat.CodeGenerator.Agents
                 Apikeys.openAI,
                 model,
                 botParameters.temp,
-                1, 
-                0, 
+                1,
+                0,
                 0,
                 model.MaxOutputTokens,
                 messages,
@@ -205,7 +203,6 @@ namespace Sanat.CodeGenerator.Agents
                     break;
                 case ApiProviders.Anthropic:
                     AskAntrophic(botParameters.antrophicRequest, botParameters.onAntrophicChatResponseComplete);
-
                     break;
                 case ApiProviders.Groq:
                     if (botParameters.isToolUse)
@@ -218,7 +215,7 @@ namespace Sanat.CodeGenerator.Agents
                     }
                     break;
                 case ApiProviders.Gemini:
-                    AskGemini(botParameters.prompt, botParameters.temp, botParameters.onComplete);
+                    AskGemini(botParameters.geminiRequest, botParameters.onComplete);
                     break;
             }
         }
@@ -249,7 +246,6 @@ namespace Sanat.CodeGenerator.Agents
         public void AskGroq(string prompt, float temp, Action<string> onComplete) {
             List<ApiOpenAI.ChatMessage> messages = new List<ApiOpenAI.ChatMessage>();
             messages.Add(new ApiOpenAI.ChatMessage("user", prompt));
-
             UnityWebRequestAsyncOperation request = Groq.SubmitChatAsync(
                 Apikeys.groq,
                 ApiGroqModels.Llama3_70b_8192_tool,
@@ -260,18 +256,8 @@ namespace Sanat.CodeGenerator.Agents
             );
         }
         
-        public void AskGemini(string prompt, float temp, Action<string> onComplete) {
-            List<ApiGemini.ChatMessage> messages = new List<ApiGemini.ChatMessage>();
-            messages.Add(new ApiGemini.ChatMessage("user", prompt));
-
-            UnityWebRequestAsyncOperation request = Gemini.SubmitChatAsync(
-                Apikeys.gemini,
-                _modelName, // or whatever model you're using
-                temp,
-                4095,
-                messages,
-                onComplete
-            );
+        public void AskGemini(ChatRequest chatRequest, Action<string> onComplete) {
+            Gemini.SubmitChatAsync(Apikeys.gemini, _modelName, chatRequest, onComplete);
         }
         
         public static string ClearResult(string input, Brackets bracket = Brackets.square)
@@ -290,13 +276,38 @@ namespace Sanat.CodeGenerator.Agents
                     break;
             }
             Match match = Regex.Match(input, pattern, RegexOptions.Singleline);
-    
+            
             if (match.Success)
             {
                 return match.Groups[1].Value;
             }
             Debug.LogError("No match found");
             return input;
+        }
+
+        public void ChangeLLM(ApiProviders provider, string modelName)
+        {
+            SelectedApiProvider = provider;
+            _modelName = modelName;
+            _isModelChanged = true;
+            switch (provider)
+            {
+                case ApiProviders.OpenAI:
+                    _isChangedModelAnthropic = false;
+                    _isChangedModelOpenai = true;
+                    _isChangedModelGemini = false;
+                    break;
+                case ApiProviders.Gemini:
+                    _isChangedModelAnthropic = false;
+                    _isChangedModelOpenai = false;
+                    _isChangedModelGemini = true;
+                    break;
+                case ApiProviders.Anthropic:
+                    _isChangedModelAnthropic = true;
+                    _isChangedModelOpenai = false;
+                    _isChangedModelGemini = false;
+                    break;
+            }
         }
 
         public struct ApiKeys
@@ -320,6 +331,13 @@ namespace Sanat.CodeGenerator.Agents
         {
             public string FilePath { get; set; }
             public string Content { get; set; }
+        }
+
+        [Serializable]
+        public class TechnicalSpecification
+        {
+            public string FilePathes;
+            public string Solution;
         }
     }
 }

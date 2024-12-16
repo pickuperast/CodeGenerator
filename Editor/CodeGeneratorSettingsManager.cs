@@ -33,6 +33,7 @@ namespace Sanat.CodeGenerator.Editor
         
         public async UniTask LoadSettings(CodeGenerator codeGenerator)
         {
+            codeGenerator.IsSettingsLoaded = false;
             codeGenerator.selectedClassNames = new List<string>(
                 EditorPrefs.GetString("SelectedClassNames", "")
                     .Split(',')
@@ -59,7 +60,6 @@ namespace Sanat.CodeGenerator.Editor
             Debug.Log("Class list refreshed");
             codeGenerator.CheckAndHandleFirstLaunch();
             Debug.Log("First launch checked");
-            await UniTask.Delay(System.TimeSpan.FromSeconds(5), DelayType.DeltaTime, PlayerLoopTiming.Update);
             codeGenerator.bookmarkManager = new CodeGeneratorBookmarks();
             codeGenerator.bookmarkManager.OnBookmarkLoaded += codeGenerator.LoadBookmarkData;
             codeGenerator.bookmarkManager.LoadBookmarksFromPrefs();
@@ -80,14 +80,16 @@ namespace Sanat.CodeGenerator.Editor
                 { "AgentCodeArchitector", new AgentModelSettings 
                 {
                     AgentName = "Code Architector",
-                    ApiProvider = AbstractAgentHandler.ApiProviders.Anthropic,
-                    ModelName = ApiAnthropic.Model.Claude35Latest.Name
+                    ApiProvider = AbstractAgentHandler.ApiProviders.Gemini,
+                    ModelName = Sanat.ApiGemini.Model.Flash2.Name
+                    // ApiProvider = AbstractAgentHandler.ApiProviders.Anthropic,
+                    // ModelName = ApiAnthropic.Model.Claude35Latest.Name
                 }},
                 { "AgentCodeMerger", new AgentModelSettings 
                 {
                     AgentName = "Code Merger",
                     ApiProvider = AbstractAgentHandler.ApiProviders.Gemini,
-                    ModelName = Sanat.ApiGemini.ApiGeminiModels.Pro
+                    ModelName = Sanat.ApiGemini.Model.Pro.Name
                 }},
                 { "AgentCodeValidator", new AgentModelSettings 
                 {

@@ -11,8 +11,8 @@ namespace Sanat.CodeGenerator.Agents
         private string _prompt;
 
         protected override string PromptFilename() => "PromptGeneratePromptsFromDescription.md";
-        protected override Model GetModel() => Model.GPT4o_16K;
-        protected override string GetGeminiModel() => ApiGeminiModels.Pro;
+        protected override ApiOpenAI.Model GetModel() => ApiOpenAI.Model.GPT4o_16K;
+        protected override string GetGeminiModel() => ApiGemini.Model.Pro.Name;
         private const string LOCAL_PROMPTS_FOLDER_PATH = "/Sanat/CodeGenerator/QuestsGenerator/Editor/Prompts/";
         
         public AgentDescriptionToPrompt(ApiKeys apiKeys, string task)

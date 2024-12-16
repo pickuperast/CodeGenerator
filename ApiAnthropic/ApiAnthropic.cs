@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Networking;
 using Newtonsoft.Json;
+using Sanat.CodeGenerator.Common;
 
 namespace Sanat.ApiAnthropic
 {
@@ -46,7 +47,7 @@ namespace Sanat.ApiAnthropic
                 }
                 webRequest.Dispose();
                 webRequest = null;
-                var elapsedTime = (DateTime.Now - startTime).Seconds;
+                var elapsedTime = (DateTime.Now - startTime).TotalSeconds;
                 if (!string.IsNullOrEmpty(text))
                 {
                     responseData = JsonConvert.DeserializeObject<ApiAntrophicData.ChatResponse>(text);
@@ -59,9 +60,9 @@ namespace Sanat.ApiAnthropic
                     float inputCost = (tokensPrompt / 1000000f) * model.InputPricePerMil;
                     float outputCost = (tokensCompletion / 1000000f) * model.OutputPricePerMil;
                     float totalCost = inputCost + outputCost;
-
-                    Debug.Log($"{model.Name} [<color=orange>{elapsedTime}</color> sec] Usage(<color=green>{totalCost:F3}</color>$): input_tokens: {tokensPrompt} (${inputCost:F6}); " +
-                              $"output_tokens: {tokensCompletion} (${outputCost:F6}); " +
+                    
+                    Debug.Log($"{model.Name} [<color=orange>{elapsedTime:F0}</color> sec] Usage(<color=green>{totalCost:F3}</color>$): {CommonForAnyApi.OUTPUT_TOKENS_SYMBOL} {tokensPrompt} (${inputCost:F6}); " +
+                              $"{CommonForAnyApi.INPUT_TOKENS_SYMBOL} {tokensCompletion} (${outputCost:F6}); " +
                               $"total_tokens: {tokensTotal}");
                 }
                 callback?.Invoke(responseData);

@@ -25,9 +25,9 @@ namespace Sanat.CodeGenerator.Agents
 		
 		protected override string PromptFilename() => "AgentCodeMerger.md";
 		
-		protected override Model GetModel() => Model.GPT4omini;
+		protected override ApiOpenAI.Model GetModel() => ApiOpenAI.Model.GPT4omini;
         
-		protected override string GetGeminiModel() => ApiGeminiModels.Flash;
+		protected override string GetGeminiModel() => ApiGemini.Model.Flash.Name;
 
 		public AgentCodeMerger() { }
 
@@ -89,7 +89,7 @@ namespace Sanat.CodeGenerator.Agents
 			string promptLocation = Application.dataPath + $"{PROMPTS_FOLDER_PATH}{PROMPT_FILE_PATH_EXTRACT}";
 			string agentLogName = $"<color=cyan>{Name}</color>";
 			string question = solutionInput;
-			_modelName = Model.GPT4omini.Name;//ApiGroqModels.Llama3_70b_8192_tool.Name;
+			_modelName = ApiOpenAI.Model.GPT4omini.Name;//ApiGroqModels.Llama3_70b_8192_tool.Name;
 			BotParameters botParameters = new BotParameters(question, ApiProviders.OpenAI, .2f, callback, _modelName, true);
 			var openaiTools = new ApiOpenAI.Tool[] { new ("function", GetFunctionData_OpenaiSplitCodeToFilePathes()) };
 			botParameters.isToolUse = true;
@@ -144,6 +144,7 @@ namespace Sanat.CodeGenerator.Agents
 						continue;
 				
 					code = TranslateFromValidJson(code);
+					code = code.Replace("\\n", "\n").Replace("\\r\\n", "\r\n");
 					DirectInsertion(filePath, code);
 				}
 			}catch(Exception ex)
@@ -168,6 +169,7 @@ namespace Sanat.CodeGenerator.Agents
 					
 						var match = Regex.Match(result, @"```\s*([\s\S]+)```");
 						string formattedCode = match.Groups[1].Value;
+						formattedCode = formattedCode.Replace("\\n", "\n").Replace("\\r\\n", "\r\n");
 						DirectInsertion(filePath, formattedCode);
 					});
 					AskBot(botParameters);
@@ -260,11 +262,32 @@ namespace Sanat.CodeGenerator.Agents
 		{
 			string promptLocation = Application.dataPath + $"{PROMPTS_FOLDER_PATH}{PROMPT_MERGE_CODE}";
 			string agentLogName = $"<color=cyan>{Name}</color>";
-			string oldCode = _projectCode.FirstOrDefault(x => x.FilePath == fileContentToMerge.FilePath).Content;
+			string oldCode = String.Empty;
+			
+			Debug.Log($"<color=cyan>{Name}</color> normalizing path: {fileContentToMerge.FilePath}");
+			string normalizedPathToFind = Path.GetFullPath(fileContentToMerge.FilePath).Replace("/", Path.DirectorySeparatorChar.ToString()).Replace("\\", Path.DirectorySeparatorChar.ToString());
+
+			
+			if (fileContentToMerge.FilePath.Contains("/")) fileContentToMerge.FilePath.Replace("/", "\\");
+			foreach (var files in _projectCode)
+			{
+				string normalizedProjectPath = Path.GetFullPath(files.FilePath).Replace("/", Path.DirectorySeparatorChar.ToString()).Replace("\\", Path.DirectorySeparatorChar.ToString());
+
+				if (normalizedProjectPath.Equals(normalizedPathToFind, StringComparison.OrdinalIgnoreCase))
+				{
+					oldCode = files.Content;
+					break;
+				}
+			}
+			if (oldCode == String.Empty)
+			{
+				Debug.LogError($"<color=cyan>{Name}</color> <color=red>ERROR!</color> Could not find the old code for: {fileContentToMerge.FilePath}");
+				return;
+			}
 			string question = $"Path: {fileContentToMerge.FilePath}. Here is the Old Code:\n" + oldCode + "\n\nHere is the New Code:\n" + fileContentToMerge.Content;
 			Debug.Log($"{agentLogName} MergeCodeWithLLM asking: {question}");
 			
-			_modelName = Model.GPT4omini.Name;//ApiGroqModels.Llama3_70b_8192_tool.Name;
+			_modelName = ApiOpenAI.Model.GPT4omini.Name;//ApiGroqModels.Llama3_70b_8192_tool.Name;
 			BotParameters botParameters = new BotParameters(question, ApiProviders.OpenAI, .2f, null, _modelName, true);
 			var openaiTools = new ApiOpenAI.Tool[] { new ("function", GetFunctionData_OpenaiSplitCodeToFilePathes()) };
 			botParameters.isToolUse = true;
@@ -306,6 +329,11 @@ namespace Sanat.CodeGenerator.Agents
 			SaveResultToFile(code);
 			filePath = filePath.Replace(":", string.Empty);
 			CompareAndFixFilePath(ref filePath);
+			code = Regex.Unescape(code);
+			code = code.Replace("\r\n", "\n")  // First normalize to \n
+				.Replace("\r", "\n")      // Convert any remaining \r to \n
+				.Replace("\n", Environment.NewLine); // Then convert to platform-specific line endings
+			
 			if (File.Exists(filePath))
 			{
 				string originalContent = File.ReadAllText(filePath);
@@ -323,7 +351,7 @@ namespace Sanat.CodeGenerator.Agents
 			}
 
 			File.SetAttributes(filePath, FileAttributes.Normal);
-			File.WriteAllText(filePath, code, Encoding.UTF8);
+			File.WriteAllText(filePath, code, new UTF8Encoding(false));
 			OnComplete?.Invoke(code);
 			CodeGeneratorFileOpener.OpenScript(filePath);
 			Debug.Log($"<color=cyan>{Name}</color> <color=green>COMPLETED!</color> [{filePath}] Direct insertion:\n{code}");

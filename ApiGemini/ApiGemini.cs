@@ -1,68 +1,126 @@
 ﻿// Assets\Sanat\CodeGenerator\ApiGemini\ApiGemini.cs
- using System;
+using System;
 using System.Collections.Generic;
+using Newtonsoft.Json;
 using UnityEngine;
 using UnityEngine.Networking;
+using Sanat.CodeGenerator.Common;
 
 namespace Sanat.ApiGemini
 {
     public static class Gemini
     {
-        public static string BaseURL { get; set; } = "https://us-central1-aiplatform.googleapis.com/v1/";
         public static string BaseURL2 { get; set; } = "https://generativelanguage.googleapis.com/v1beta/models/";
         public const string PREFS_GEMINI_PROJECT_NAME = "GeminiProjectName";
         public static string TextToSpeechURL = "https://texttospeech.googleapis.com/v1/text:synthesize";
 
+        
         public static UnityWebRequestAsyncOperation SubmitChatAsync(
-            string apiKey, 
-            string model, 
-            float temperature, 
-            int maxTokens,
-            List<ChatMessage> messages, 
+            string apiKey,
+            string model,
+            ChatRequest chatRequest,
             Action<string> callback)
         {
-            var chatRequest = new ChatRequest(messages[0].content, temperature);
-            string jsonData = JsonUtility.ToJson(chatRequest);
+            var settings = new JsonSerializerSettings
+            {
+                NullValueHandling = NullValueHandling.Ignore,
+                DefaultValueHandling = DefaultValueHandling.Ignore
+            };
+
+            string jsonData = JsonConvert.SerializeObject(chatRequest, settings);
+            return SendRequestRecursively(apiKey, model, jsonData, chatRequest, callback);
+        }
+
+        private static UnityWebRequestAsyncOperation SendRequestRecursively(
+            string apiKey,
+            string model,
+            string jsonData,
+            ChatRequest chatRequest,
+            Action<string> callback,
+            int retryCount = 0,
+            int maxRetries = 3)
+        {
             string generatedUrl = $"{BaseURL2}{model}:generateContent?key={apiKey}";
             UnityWebRequest webRequest = CreateWebRequest(apiKey, generatedUrl, jsonData);
-
             UnityWebRequestAsyncOperation asyncOp = webRequest.SendWebRequest();
+            bool isToolCalling = chatRequest.tools != null && chatRequest.tools.Count > 0;
+            var startTime = DateTime.Now;
+
             asyncOp.completed += (op) =>
             {
+                var elapsedTime = (DateTime.Now - startTime).TotalSeconds;
                 var success = webRequest.result == UnityWebRequest.Result.Success;
                 var text = success ? webRequest.downloadHandler.text : string.Empty;
+
                 if (!success)
                 {
-                    Debug.Log($"{webRequest.error} {apiKey}\n{webRequest.downloadHandler.text}");
+                    Debug.Log($"{webRequest.error} --- {webRequest.downloadHandler.text}");
                     callback?.Invoke($"{webRequest.error}");
+                    webRequest.Dispose();
+                    return;
                 }
-                webRequest.Dispose();
 
-                if (!string.IsNullOrEmpty(text))
+                // Check for error conditions that require retry
+                if (isToolCalling && (text.Contains("MAX_TOKENS") || text.Contains("print(default_api.")) && retryCount < maxRetries)
                 {
-                    var responseData = JsonUtility.FromJson<ChatResponse>(text);
-                    if (responseData.candidates != null && responseData.candidates.Count > 0)
-                    {
-                        text = responseData.candidates[0].content.parts[0].text.Trim();
-                    }
-                    else
-                    {
-                        text = "No candidates found in response.";
-                    }
-
-                    var tokensPrompt = responseData.usageMetadata.promptTokenCount;
-                    var tokensCompletion = responseData.usageMetadata.candidatesTokenCount;
-                    var tokensTotal = responseData.usageMetadata.totalTokenCount;
-
-                    Debug.Log($"{model} Usage: prompt_tokens: {tokensPrompt}; completion_tokens: {tokensCompletion}; total_tokens: {tokensTotal}");
+                    Debug.Log($"{model} Retry #{retryCount + 1} due to: {(text.Contains("MAX_TOKENS") ? "MAX_TOKENS" : "print(default_api")}");
+                    webRequest.Dispose();
+                    
+                    // Recursive call with increased retry count
+                    SendRequestRecursively(apiKey, model, jsonData, chatRequest, callback, retryCount + 1, maxRetries);
+                    return;
                 }
-                callback?.Invoke(text);
+
+                // Process successful response
+                string answer = ProcessResponse(text, model, elapsedTime);
+                webRequest.Dispose();
+                
+                if (!text.Contains("MAX_TOKENS")) // Only invoke callback if not hitting token limit
+                {
+                    callback?.Invoke(answer);
+                }
             };
 
             return asyncOp;
         }
 
-        public static UnityWebRequest CreateWebRequest(string apiKey, string url, string jsonData)
+        private static string ProcessResponse(string text, string model, double elapsedTime)
+        {
+            if (string.IsNullOrEmpty(text))
+                return string.Empty;
+
+            var responseData = JsonConvert.DeserializeObject<ChatResponse>(text);
+            if (responseData?.candidates == null || responseData.candidates.Count == 0)
+                return "No candidates found in response.";
+
+            var candidate = responseData.candidates[0];
+            var part = candidate.content.parts[0];
+            string answer;
+
+            if (part.functionCall != null && part.functionCall.name != null)
+            {
+                Debug.Log($"Function Call: {part.functionCall.name}, Args: {JsonConvert.SerializeObject(part.functionCall.args)}");
+                answer = text;
+            }
+            else if (part.text != null)
+            {
+                answer = part.text.Trim();
+            }
+            else
+            {
+                answer = "No candidates found in response.";
+            }
+
+            // Log usage metrics
+            float tokensPrompt = responseData.usageMetadata.promptTokenCount / 1000f;
+            var tokensCompletion = responseData.usageMetadata.candidatesTokenCount / 1000f;
+            var tokensTotal = responseData.usageMetadata.totalTokenCount / 1000f;
+            Debug.Log($"{model} [<color=orange>{elapsedTime:F0}</color> sec] Usage: {CommonForAnyApi.OUTPUT_TOKENS_SYMBOL} {tokensPrompt:F1}K; {CommonForAnyApi.INPUT_TOKENS_SYMBOL} {tokensCompletion:F1}K; total_tokens: {tokensTotal:F1}K");
+
+            return answer;
+        }
+
+        private static UnityWebRequest CreateWebRequest(string apiKey, string url, string jsonData)
         {
             byte[] postData = System.Text.Encoding.UTF8.GetBytes(jsonData);
             UnityWebRequest webRequest = new UnityWebRequest(url, "POST")
@@ -73,7 +131,6 @@ namespace Sanat.ApiGemini
                 disposeDownloadHandlerOnDispose = true
             };
             webRequest.SetRequestHeader("Content-Type", "application/json");
-
             return webRequest;
         }
 
@@ -82,8 +139,8 @@ namespace Sanat.ApiGemini
             var request = new TextToSpeechRequest(text, languageCode, name, ssmlGender);
             string jsonData = JsonUtility.ToJson(request);
             UnityWebRequest webRequest = CreateWebRequest(projectName, TextToSpeechURL, jsonData);
-
             UnityWebRequestAsyncOperation asyncOp = webRequest.SendWebRequest();
+
             asyncOp.completed += (op) =>
             {
                 var success = webRequest.result == UnityWebRequest.Result.Success;
@@ -93,7 +150,7 @@ namespace Sanat.ApiGemini
                     callback?.Invoke(null);
                     return;
                 }
-                
+
                 var audioData = webRequest.downloadHandler.data;
                 float[] floatData = ConvertByteToFloatArray(audioData);
                 AudioClip audioClip = AudioClip.Create("TextToSpeech", floatData.Length, 1, 44100, false);
@@ -101,8 +158,8 @@ namespace Sanat.ApiGemini
                 callback?.Invoke(audioClip);
             };
         }
-
-        private static float[] ConvertByteToFloatArray(byte[] byteArray)
+        
+        public static float[] ConvertByteToFloatArray(byte[] byteArray)
         {
             int floatArrayLength = byteArray.Length / 4;
             float[] floatArray = new float[floatArrayLength];
@@ -111,69 +168,6 @@ namespace Sanat.ApiGemini
                 floatArray[i] = BitConverter.ToSingle(byteArray, i * 4);
             }
             return floatArray;
-        }
-    }
-
-    [Serializable]
-    public class TextToSpeechRequest
-    {
-        public Input input;
-        public Voice voice;
-        public AudioConfig audioConfig;
-
-        public TextToSpeechRequest(string text, string languageCode, string name, string ssmlGender)
-        {
-            input = new Input { text = text };
-            voice = new Voice { languageCode = languageCode, name = name, ssmlGender = ssmlGender };
-            audioConfig = new AudioConfig { audioEncoding = "MP3" };
-        }
-    }
-
-    [Serializable]
-    public class Input
-    {
-        public string text;
-    }
-
-    [Serializable]
-    public class Voice
-    {
-        public string languageCode;
-        public string name;
-        public string ssmlGender;
-    }
-
-    [Serializable]
-    public class AudioConfig
-    {
-        public string audioEncoding;
-    }
-
-    [Serializable]
-    public class ChatRequest
-    {
-        public Contents contents;
-        public SafetySettings safety_settings;
-        public GenerationConfig generation_config;
-
-        public ChatRequest(string message, float temperature)
-        {
-            contents = new Contents
-            {
-                role = "user",
-                parts = new Parts { text = message }
-            };
-            safety_settings = new SafetySettings
-            {
-                category = "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-                threshold = "BLOCK_LOW_AND_ABOVE"
-            };
-            generation_config = new GenerationConfig
-            {
-                temperature = temperature,
-                topP = 0.8f,
-                topK = 40
-            };
         }
     }
 }

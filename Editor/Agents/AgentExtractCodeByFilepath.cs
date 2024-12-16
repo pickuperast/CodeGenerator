@@ -16,7 +16,7 @@ namespace Sanat.CodeGenerator.Agents
 
         protected override Sanat.ApiOpenAI.Model GetModel() => Sanat.ApiOpenAI.Model.GPT4omini;
         
-        protected override string GetGeminiModel() => ApiGeminiModels.Pro;
+        protected override string GetGeminiModel() => ApiGemini.Model.Pro.Name;
         
         public AgentExtractCodeByFilepath(ApiKeys apiKeys, string filePath)
         {

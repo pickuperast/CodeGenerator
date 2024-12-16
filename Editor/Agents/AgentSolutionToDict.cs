@@ -20,7 +20,7 @@ namespace Sanat.CodeGenerator.Agents
             Sanat.ApiOpenAI.Model.GPT4omini;
         
         protected override string GetGeminiModel() => 
-            ApiGeminiModels.Pro;
+            ApiGemini.Model.Pro.Name;
         
         
         public AgentSolutionToDict(ApiKeys apiKeys, string[] filePathes)
