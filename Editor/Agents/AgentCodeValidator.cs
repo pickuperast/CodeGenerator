@@ -29,8 +29,8 @@ namespace Sanat.CodeGenerator.Agents
             StoreKeys(apiKeys);
             _modelName = Sanat.ApiOpenAI.Model.GPT4omini.Name;
             string promptLocation = Application.dataPath + $"{PROMPTS_FOLDER_PATH}{PromptFilename()}";
-            Instructions = LoadPrompt(promptLocation);
-            _prompt = $"{Instructions} " +
+            PromptFromMdFile = LoadPrompt(promptLocation);
+            _prompt = $"{PromptFromMdFile} " +
                       $"# TASK: {task}. " +
                       $"# CODE: {includedCode} " +
                       $"# POSSIBLE ANSWER: {possibleAnswer}";

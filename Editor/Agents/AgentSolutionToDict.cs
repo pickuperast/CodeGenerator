@@ -29,16 +29,16 @@ namespace Sanat.CodeGenerator.Agents
             Description = "Merges code snippets";
             Temperature = .1f;
             string promptLocation = Application.dataPath + $"{PROMPTS_FOLDER_PATH}{PromptFilename()}";
-            Instructions = LoadPrompt(promptLocation);
+            PromptFromMdFile = LoadPrompt(promptLocation);
             string filePathesMerged = string.Join("\n", filePathes);
-            Instructions = Instructions.Replace("@filePathes@", filePathesMerged);
+            PromptFromMdFile = PromptFromMdFile.Replace("@filePathes@", filePathesMerged);
             StoreKeys(apiKeys);
             SelectedApiProvider = ApiProviders.OpenAI;
         }
 
         public override void Handle(string inputSolution)
         {
-            string prompt = Instructions + inputSolution;
+            string prompt = PromptFromMdFile + inputSolution;
             SplitToFilePathContent(prompt, OnComplete);
         }
 

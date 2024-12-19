@@ -187,13 +187,6 @@ namespace Sanat.CodeGenerator
         {
             var apiKeys = new AbstractAgentHandler.ApiKeys(openaiApiKey, antrophicApiKey, groqApiKey, geminiApiKey);
     
-            // Initialize agents with appropriate settings
-            var agentCodeHighLevelArchitector = new AgentCodeHighLevelArchitector(apiKeys, taskInput, includedCode);
-            var agentCodeArchitector = new AgentCodeArchitector(apiKeys, taskInput, includedCode);
-            var architectorSettings = agentModelSettings["AgentCodeArchitector"];
-            agentCodeArchitector.ChangeLLM(architectorSettings.ApiProvider, architectorSettings.ModelName);
-    
-            // Convert paths to dictionary for project code
             List<AbstractAgentHandler.FileContent> projectCodeScope = new ();
             foreach(var path in projectCodePaths)
             {
@@ -205,6 +198,11 @@ namespace Sanat.CodeGenerator
                     projectCodeScope.Add(fileContent);
                 }
             }
+            var agentCodeHighLevelArchitector = new AgentCodeHighLevelArchitector(apiKeys, taskInput, includedCode);
+            var agentCodeArchitector = new AgentCodeArchitector(apiKeys, taskInput, projectCodeScope);
+            var architectorSettings = agentModelSettings["AgentCodeArchitector"];
+            agentCodeArchitector.ChangeLLM(architectorSettings.ApiProvider, architectorSettings.ModelName);
+    
     
             var agentCodeMerger = new AgentCodeMerger(apiKeys, projectCodeScope, projectCodePaths); // Using the correct constructor
             // Set up callbacks and chain

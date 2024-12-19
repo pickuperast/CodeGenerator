@@ -24,10 +24,10 @@ namespace Sanat.CodeGenerator.Agents
             Temperature = 1.0f;
             StoreKeys(apiKeys);
             string promptLocation = Application.dataPath + $"{LOCAL_PROMPTS_FOLDER_PATH}{PromptFilename()}";
-            Instructions = LoadPrompt(promptLocation);
+            PromptFromMdFile = LoadPrompt(promptLocation);
             if (alreadyExistingItems != String.Empty)
                 alreadyExistingItems = "# Already existing items: " + alreadyExistingItems;
-            _prompt = $"{Instructions} # TASK: {task}. " + alreadyExistingItems;
+            _prompt = $"{PromptFromMdFile} # TASK: {task}. " + alreadyExistingItems;
             SelectedApiProvider = ApiProviders.OpenAI;
             _modelName = GetModel().Name;
         }
@@ -105,7 +105,7 @@ namespace Sanat.CodeGenerator.Agents
             BotParameters botParameters = new BotParameters(_prompt, SelectedApiProvider, Temperature, null, _modelName, true);
             var openaiTools = new ApiOpenAI.Tool[] { new ("function", GetFunctionData_OpenaiSplitCodeToFilePathes()) };
             botParameters.openaiTools = openaiTools;
-            botParameters.systemMessage = Instructions;
+            botParameters.systemMessage = PromptFromMdFile;
             botParameters.isToolUse = true;
             botParameters.onOpenaiChatResponseComplete += (response) =>
             {

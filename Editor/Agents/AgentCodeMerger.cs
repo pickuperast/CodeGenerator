@@ -18,7 +18,6 @@ namespace Sanat.CodeGenerator.Agents
 {
 	public class AgentCodeMerger : AbstractAgentHandler
 	{
-		protected List<FileContent> _projectCode = new ();
 		protected const string PROMPT_FILE_PATH_EXTRACT = "PromptAgentCodeMergerFilePathExtract.md";
 		protected const string PROMPT_MERGE_CODE = "PromptAgentCodeMergerMergeCode.md";
 		string[] _projectCodePaths;
@@ -37,7 +36,7 @@ namespace Sanat.CodeGenerator.Agents
 			Description = "Merges code snippets";
 			Temperature = .0f;
 			string promptLocation = Application.dataPath + $"{PROMPTS_FOLDER_PATH}{PromptFilename()}";
-			Instructions = LoadPrompt(promptLocation);
+			PromptFromMdFile = LoadPrompt(promptLocation);
 			StoreKeys(apiKeys);
 			_projectCode = includedCodeFiles;
 			_projectCodePaths = projectCodePaths;
@@ -248,7 +247,7 @@ namespace Sanat.CodeGenerator.Agents
 				if (fileExists)
 				{
 					Debug.Log($"<color=cyan>{Name}</color> Merging code for: {fileContent.FilePath}");
-					await MergeCodeWithLLM(fileContent);
+					MergeCodeWithLLM(fileContent);
 				}
 				else
 				{
@@ -258,7 +257,7 @@ namespace Sanat.CodeGenerator.Agents
 			}
 		}
 
-		async Task MergeCodeWithLLM(FileContent fileContentToMerge)
+		public async Task MergeCodeWithLLM(FileContent fileContentToMerge)
 		{
 			string promptLocation = Application.dataPath + $"{PROMPTS_FOLDER_PATH}{PROMPT_MERGE_CODE}";
 			string agentLogName = $"<color=cyan>{Name}</color>";
@@ -295,8 +294,9 @@ namespace Sanat.CodeGenerator.Agents
 			botParameters.systemMessage = LoadPrompt(promptLocation);
 			botParameters.onOpenaiChatResponseComplete += (response) =>
 			{
-				Debug.Log($"{agentLogName} GetFilePath Result: {response}");
-				SaveResultToFile(JsonConvert.SerializeObject(response));
+				string responseText = JsonConvert.SerializeObject(response);
+				Debug.Log($"{agentLogName} GetFilePath Result: {responseText}");
+				SaveResultToFile(responseText);
 				if (response.choices[0].finish_reason == "tool_calls")
 				{
 					ToolCalls[] toolCalls = response.choices[0].message.tool_calls;

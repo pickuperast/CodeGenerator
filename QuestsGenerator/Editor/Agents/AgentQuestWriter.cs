@@ -38,10 +38,10 @@ namespace Sanat.CodeGenerator.Agents
             Temperature = .7f;
             StoreKeys(apiKeys);
             string promptLocation = Application.dataPath + $"{LOCAL_PROMPTS_FOLDER_PATH}{PromptFilename()}";
-            Instructions = LoadPrompt(promptLocation);
+            PromptFromMdFile = LoadPrompt(promptLocation);
             if (alreadyExistingQuests != String.Empty)
                 alreadyExistingQuests = "# ALREADY EXISTING QUESTS: " + alreadyExistingQuests;
-            _prompt = $"{Instructions} # TASK: {task}. {alreadyExistingQuests}";
+            _prompt = $"{PromptFromMdFile} # TASK: {task}. {alreadyExistingQuests}";
             //_prompt = $"# TASK: {task}. {alreadyExistingQuests}";
             SelectedApiProvider = ApiProviders.OpenAI;
         }

@@ -9,4 +9,9 @@ I will provide old code that requires merging.
 I will provide new code that should be merged with old code.
 So that the code will be updated with the new functionality.
 Provide Full code in your answer.
+DO NOT TELL "// Other methods would need similar updates..." or "// Rest of the script remains the same" in your answer.
+Provide Full code in your answer.
+Provide Full code in your answer.
+Provide Full code in your answer.
+Provide Full code in your answer.
 Keep in mind that you can not provide in answer 2 same files, because you need to merge them.

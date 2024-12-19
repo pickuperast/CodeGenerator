@@ -24,8 +24,8 @@ namespace Sanat.CodeGenerator.Agents
             Description = "Extracts code snippets";
             Temperature = .0f;
             string promptLocation = Application.dataPath + $"{PROMPTS_FOLDER_PATH}{PromptFilename()}";
-            Instructions = LoadPrompt(promptLocation);
-            Instructions = Instructions.Replace("@filePathes@", filePath);
+            PromptFromMdFile = LoadPrompt(promptLocation);
+            PromptFromMdFile = PromptFromMdFile.Replace("@filePathes@", filePath);
             StoreKeys(apiKeys);
             SelectedApiProvider = ApiProviders.OpenAI;
         }

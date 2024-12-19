@@ -59,8 +59,10 @@ namespace Sanat.CodeGenerator.Agents
             StoreKeys(apiKeys);
             _promptLocation = Application.dataPath + $"{PROMPTS_FOLDER_PATH}{PromptFilename()}";
             _task = $"{task}";
-            Instructions = LoadPrompt(_promptLocation);
-            _systemInstructions = $"{Instructions} # PROJECT CODE: " + includedCode;
+            PromptFromMdFile = LoadPrompt(_promptLocation);
+            _systemInstructions = $"{PromptFromMdFile} # PROJECT CODE: " + includedCode;
+            SelectedApiProvider = ApiProviders.Anthropic;
+            _modelName = ApiAnthropic.Model.Claude35Latest.Name;
             SelectedApiProvider = ApiProviders.Gemini;
             _modelName = ApiGemini.Model.Flash2.Name;
         }
@@ -79,7 +81,28 @@ namespace Sanat.CodeGenerator.Agents
             switch (botParameters.apiProvider)
             {
                 case ApiProviders.OpenAI:
-                    ToolHandlingOpenAI(botParameters, systemPrompt);
+                    botParameters.antrophicRequest = new Antrophic.ChatRequest(_modelName, .5f, new List<Antrophic.ChatMessage>
+                    {
+                        new ("assistant", _systemInstructions),
+                        new ("user", _task)
+                    }, null, ApiAnthropic.Model.GetModelByName(_modelName).MaxOutputTokens);
+                    botParameters.onAntrophicChatResponseComplete += (response) =>
+                    {
+                        if (response.type == "error")
+                        {
+                            Debug.LogError($"{DebugName} error[{response.error.type}]; message: {response.error.message}");
+                        }
+                        else
+                        {
+                            foreach (var responseContent in response.content)
+                            {
+                                SaveResultToFile(JsonConvert.SerializeObject(responseContent.text));
+                                Debug.Log($"{DebugName}: {responseContent.text}");
+                                OnTextAnswerProvided?.Invoke(responseContent.text);
+                            }
+                        }
+                        
+                    };
                     break;
 
                 case ApiProviders.Gemini:

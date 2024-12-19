@@ -28,7 +28,7 @@ namespace Sanat.CodeGenerator.Agents
         public string Description { get; set; }
         public string[] Tools { get; set; }
         public float Temperature { get; set; }
-        public string Instructions { get; set; }
+        public string PromptFromMdFile { get; set; }
         public Dictionary<string, string> ClassToPath { get; set; }
         public ApiProviders SelectedApiProvider = ApiProviders.Anthropic;
         public ApiKeys Apikeys;
@@ -38,6 +38,7 @@ namespace Sanat.CodeGenerator.Agents
         public const string PROMPTS_FOLDER_PATH = "/Sanat/CodeGenerator/Editor/Agents/Prompts/";
         public const string KEY_FIGURE_OPEN = "[figureOpen]";
         public const string KEY_FIGURE_CLOSE = "[figureClose]";
+        protected List<FileContent> _projectCode = new ();
 
         public enum ApiProviders { OpenAI, Anthropic, Groq, Gemini }
         public readonly string CSV_SEPARATOR = "[CSV_SEPARATOR]";
@@ -60,7 +61,7 @@ namespace Sanat.CodeGenerator.Agents
             {
                 Directory.CreateDirectory(directoryPath);
             }
-            string fileName = $"result_{Name}_{DateTime.Now:yyyy-MM-ddTHH-mm-ss}.txt";
+            string fileName = $"result_{Name}_{DateTime.Now:yyyy-MM-ddTHH-mm-ss-fff}.txt";
             string filePath = Path.Combine(directoryPath, fileName);
             File.WriteAllText(filePath, result);
             Debug.Log($"Result saved to: {filePath}");
@@ -331,6 +332,13 @@ namespace Sanat.CodeGenerator.Agents
         {
             public string FilePath { get; set; }
             public string Content { get; set; }
+        }
+        
+        [Serializable]
+        public class FileTasks
+        {
+            public string FilePath { get; set; }
+            public int TaskId { get; set; }
         }
 
         [Serializable]

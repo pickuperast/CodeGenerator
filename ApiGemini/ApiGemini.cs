@@ -55,18 +55,17 @@ namespace Sanat.ApiGemini
                 if (!success)
                 {
                     Debug.Log($"{webRequest.error} --- {webRequest.downloadHandler.text}");
-                    callback?.Invoke($"{webRequest.error}");
+                    Debug.Log($"{model} Retry #{retryCount + 1} due to: {(text.Contains("MAX_TOKENS") ? "MAX_TOKENS" : "print(default_api")}");
                     webRequest.Dispose();
+                    SendRequestRecursively(apiKey, model, jsonData, chatRequest, callback, retryCount + 1, maxRetries);
                     return;
                 }
 
-                // Check for error conditions that require retry
                 if (isToolCalling && (text.Contains("MAX_TOKENS") || text.Contains("print(default_api.")) && retryCount < maxRetries)
                 {
                     Debug.Log($"{model} Retry #{retryCount + 1} due to: {(text.Contains("MAX_TOKENS") ? "MAX_TOKENS" : "print(default_api")}");
                     webRequest.Dispose();
                     
-                    // Recursive call with increased retry count
                     SendRequestRecursively(apiKey, model, jsonData, chatRequest, callback, retryCount + 1, maxRetries);
                     return;
                 }
@@ -99,7 +98,10 @@ namespace Sanat.ApiGemini
 
             if (part.functionCall != null && part.functionCall.name != null)
             {
-                Debug.Log($"Function Call: {part.functionCall.name}, Args: {JsonConvert.SerializeObject(part.functionCall.args)}");
+                foreach (var pt in candidate.content.parts)
+                {
+                    Debug.Log($"{model} Function Call: {pt.functionCall.name}, Args: {JsonConvert.SerializeObject(pt.functionCall.args)}");
+                }
                 answer = text;
             }
             else if (part.text != null)
@@ -115,6 +117,10 @@ namespace Sanat.ApiGemini
             float tokensPrompt = responseData.usageMetadata.promptTokenCount / 1000f;
             var tokensCompletion = responseData.usageMetadata.candidatesTokenCount / 1000f;
             var tokensTotal = responseData.usageMetadata.totalTokenCount / 1000f;
+            if (tokensPrompt > 8f)
+            {
+                Debug.Log($"{model}: {text}");
+            }
             Debug.Log($"{model} [<color=orange>{elapsedTime:F0}</color> sec] Usage: {CommonForAnyApi.OUTPUT_TOKENS_SYMBOL} {tokensPrompt:F1}K; {CommonForAnyApi.INPUT_TOKENS_SYMBOL} {tokensCompletion:F1}K; total_tokens: {tokensTotal:F1}K");
 
             return answer;

@@ -16,12 +16,14 @@ namespace Sanat.CodeGenerator.Agents
         private string _prompt;
         private string _promptLocation;
         private string _task;
+        public Action<List<FileTasks>> OnFileTasksProvided;
         public Action<List<FileContent>> OnFileContentProvided;
         public Action<string> OnJobFailed;
         private readonly string _systemInstructions;
-        private AgentFunctionDefinitions _functionDefinitions; // Add this field
-
+        private AgentFunctionDefinitions _functionDefinitions;
+        
         protected override string PromptFilename() => "PromptAgentArchitectorTool.md";
+        protected string _systemInstructionSplitTaskToSingleFiles = "PromptAgentArchitector_SplitTasks.md";
         protected override Sanat.ApiOpenAI.Model GetModel()
         {
             if (_isModelChanged && _isChangedModelOpenai)
@@ -40,44 +42,143 @@ namespace Sanat.CodeGenerator.Agents
             return ApiGemini.Model.Pro.Name;
         }
 
-        public AgentCodeArchitector(ApiKeys apiKeys, string task, string includedCode)
+        public AgentCodeArchitector(ApiKeys apiKeys, string task, List<FileContent> includedCodeFiles)
         {
             Name = "Agent Unity3D Architect";
+            DebugName = $"<color=green>{Name}</color>";
             Description = "Writes code for agents";
             Temperature = .5f;
+            _projectCode = includedCodeFiles;
             StoreKeys(apiKeys);
             _promptLocation = Application.dataPath + $"{PROMPTS_FOLDER_PATH}{PromptFilename()}";
-            _task = $"# TASK: {task}. # CODE: {includedCode}";
-            Instructions = LoadPrompt(_promptLocation);
-            _prompt = $"{Instructions} # TASK: {task}. # CODE: " + includedCode;
-            _systemInstructions = $"{Instructions} # PROJECT CODE: " + includedCode;
+            _task = $"# TASK: {task}. # CODE: {JsonConvert.SerializeObject(includedCodeFiles)}";
+            PromptFromMdFile = LoadPrompt(_promptLocation);
+            _prompt = $"{PromptFromMdFile} # TASK: {task}. # CODE: {JsonConvert.SerializeObject(includedCodeFiles)}";
+            _systemInstructions = $"{PromptFromMdFile} # PROJECT CODE: {JsonConvert.SerializeObject(includedCodeFiles)}";
+            _functionDefinitions = new AgentFunctionDefinitions();
             SelectedApiProvider = ApiProviders.Gemini;
-            _functionDefinitions = new AgentFunctionDefinitions(); // Initialize the new class
+            SelectedApiProvider = ApiProviders.Anthropic;
+            _modelName = ApiAnthropic.Model.Haiku35Latest.Name;
         }
 
         public void ChangeTask(string task) => _task = task;
-        public override void Handle(string input)
+        
+        public async Task SplitTaskToSingleFiles()
         {
-            ToolHandle();
-        }
-        private async Task ToolHandle(List<Antrophic.ChatMessage> additionalMessages = null, string task = "")
-        {
-            string agentName = $"<color=green>{Name}</color>";
             await Task.Delay(100);
-            Debug.Log($"{agentName} asking [{SelectedApiProvider}][{_modelName}]: {_task}");
-            List<FileContent> fileContents = new List<FileContent>();
+            Debug.Log($"{DebugName} asking [{SelectedApiProvider}][{_modelName}]: {_task}");
+            var fileTasks = new List<FileTasks>();
             BotParameters botParameters = new BotParameters(_task, SelectedApiProvider, Temperature, null, _modelName, true);
-            string systemPrompt = PrepareSystemPrompt();
+            string systemPrompt = PrepareSystemPrompt(_systemInstructionSplitTaskToSingleFiles);
             switch (botParameters.apiProvider)
             {
                 case ApiProviders.OpenAI:
-                    ToolHandlingOpenAI(botParameters, systemPrompt, agentName);
+                    //ToolSplitTaskToSingleFilesOpenAI(botParameters, systemPrompt);
                     break;
                 case ApiProviders.Gemini:
-                    ToolHandlingGemini(botParameters, systemPrompt, agentName);
+                    ToolSplitTaskToSingleFilesGemini(botParameters, systemPrompt);
                     break;
                 case ApiProviders.Anthropic:
-                    ToolHandlingAntrophic(additionalMessages, systemPrompt, agentName, fileContents);
+                    //ToolSplitTaskToSingleFilesAntrophic(botParameters, systemPrompt);
+                    break;
+            }
+            AskBot(botParameters);
+        }
+
+        private void ToolSplitTaskToSingleFilesGemini(BotParameters botParameters, string systemPrompt)
+        {
+            var geminiTools = new List<ApiGemini.Tool> { new() { function_declarations = new List<ApiGemini.FunctionDeclaration>() { _functionDefinitions.GetFunctionData_GeminiSplitTaskToSingleFiles() } } };
+            botParameters.geminiRequest = new GeminiChatRequest(_task, Temperature)
+            {
+                tools = geminiTools,
+                tool_config = new ToolConfig { function_calling_config = new FunctionCallingConfig { mode = "any", AllowedFunctionNames = new List<string> { AgentFunctionDefinitions.TOOL_NAME_SPLIT_TASK_TO_SINGLE_FILES } } }
+            };
+            botParameters.geminiRequest.system_instruction = new Content { parts = new List<Part> { new Part { text = systemPrompt } } };
+            botParameters.onComplete += (result) =>
+            {
+                if (string.IsNullOrEmpty(result)) return;
+                var responseData = JsonConvert.DeserializeObject<ApiGemini.GenerateContentResponse>(result);
+                var fileTasks = new List<FileTasks>();
+                if (responseData.candidates != null && responseData.candidates.Count > 0)
+                {
+                    var candidate = responseData.candidates[0];
+                    foreach (var part in candidate.content.parts)
+                    {
+                        if (part.functionCall != null)
+                        {
+                            SaveResultToFile(JsonConvert.SerializeObject(part.functionCall.args));
+                            var fileContent = JsonConvert.DeserializeObject<FileTasks>(JsonConvert.SerializeObject(part.functionCall.args));
+                            fileTasks.Add(fileContent);
+                        }
+                    }
+                    if (fileTasks.Count > 0) ReportFunctionResult_SplitTaskToSingleFiles(fileTasks);
+                }
+            };
+        }
+
+        private async Task ReportFunctionResult_SplitTaskToSingleFiles(List<FileTasks> fileTasks)
+        {
+            if (fileTasks.Count > 0)
+            {
+                Debug.Log($"{DebugName} fileTasks: {fileTasks.Count}");
+                string techSpec = _task;
+                OnFileTasksProvided?.Invoke(fileTasks);
+                SelectedApiProvider = ApiProviders.OpenAI;
+                _modelName = ApiOpenAI.Model.GPT4omini.Name;
+                for (int i = 0; i < fileTasks.Count; i++)
+                {
+                    var fileTask = fileTasks[i];
+                    int taskId = fileTask.TaskId;
+                    string task = String.Empty;
+                    string currentCode = String.Empty;
+                    switch (taskId)
+                    {
+                        case 0:
+                            task = $"Modify file located at: {fileTask.FilePath}.\n# TECHNICAL SPECIFICATION: {techSpec}";
+                            currentCode = $"# PROJECT CODE: {JsonConvert.SerializeObject(_projectCode)}";
+                            break;
+                        case 1:
+                            task = $"Create new file at: {fileTask.FilePath}.\n# TECHNICAL SPECIFICATION: {techSpec}";
+                            break;
+                    }
+                    Debug.Log($"{DebugName} Task #{i}: {task}");
+                    ChangeTask(task);
+                    string systemPrompt = $"{PromptFromMdFile} {currentCode}";
+                    WriteCode(null, systemPrompt, task);
+                    await Task.Delay(100);
+                }
+            }
+            else
+            {
+                Debug.LogError($"{DebugName} No file content received");
+                OnJobFailed?.Invoke("No file content received");
+            }
+        }
+
+
+        public override void Handle(string input)
+        {
+            SplitTaskToSingleFiles();
+        }
+        private async Task WriteCode(List<Antrophic.ChatMessage> additionalMessages = null, string systemPrompt = "", string task = "")
+        {
+            await Task.Delay(100);
+            if (task == "") task = _task;
+            if (systemPrompt == "") systemPrompt = PrepareSystemPrompt();
+            Debug.Log($"{DebugName}[WriteCode] asking [{SelectedApiProvider}][{_modelName}]: {task}");
+            SaveResultToFile($"{systemPrompt} \n# TASK: {task}");
+            List<FileContent> fileContents = new List<FileContent>();
+            BotParameters botParameters = new BotParameters(task, SelectedApiProvider, Temperature, null, _modelName, true);
+            switch (botParameters.apiProvider)
+            {
+                case ApiProviders.OpenAI:
+                    ToolHandlingOpenAI(botParameters, systemPrompt, DebugName);
+                    break;
+                case ApiProviders.Gemini:
+                    ToolHandlingGemini(botParameters, systemPrompt, DebugName);
+                    break;
+                case ApiProviders.Anthropic:
+                    ToolHandlingAntrophic(additionalMessages, systemPrompt, DebugName, fileContents);
                     break;
             }
 
@@ -86,14 +187,13 @@ namespace Sanat.CodeGenerator.Agents
         #region Tools OpenAI
         private void ToolHandlingOpenAI(BotParameters botParameters, string systemPrompt, string agentName)
         {
-            _modelName = ApiOpenAI.Model.GPT4omini.Name;
             var openaiTools = new ApiOpenAI.Tool[] { new("function", _functionDefinitions.GetFunctionData_OpenaiSReplaceScriptFile()) }; // Use the new class
             botParameters.isToolUse = true;
             botParameters.openaiTools = openaiTools;
             botParameters.systemMessage = systemPrompt;
             botParameters.onOpenaiChatResponseComplete += (response) =>
             {
-                Debug.Log($"{agentName} ToolHandle Result: {response}");
+                Debug.Log($"{agentName} {AgentFunctionDefinitions.TOOL_NAME_REPLACE_SCRIPT_FILE} Result: {response}");
                 if (response.choices[0].finish_reason == "tool_calls")
                 {
                     ToolCalls[] toolCalls = response.choices[0].message.tool_calls;
@@ -180,13 +280,13 @@ namespace Sanat.CodeGenerator.Agents
         private void ToolHandlingGemini(BotParameters botParameters, string systemPrompt, string agentName)
         {
             _modelName = ApiGemini.Model.Flash2.Name;
-            var geminiTools = new List<ApiGemini.Tool> { new() { function_declarations = new List<ApiGemini.FunctionDeclaration>() { _functionDefinitions.GetFunctionData_GeminiReplaceScriptFile() } } }; // Use the new class
+            var geminiTools = new List<ApiGemini.Tool> { new() { function_declarations = new List<ApiGemini.FunctionDeclaration>() { _functionDefinitions.GetFunctionData_GeminiReplaceScriptFile() } } };
             botParameters.geminiRequest = new GeminiChatRequest(_task, Temperature)
             {
                 tools = geminiTools,
-                tool_config = new ToolConfig { function_calling_config = new FunctionCallingConfig { mode = "any", AllowedFunctionNames = new List<string> { "ReplaceScriptFile" } } }
+                tool_config = new ToolConfig { function_calling_config = new FunctionCallingConfig { mode = "any", AllowedFunctionNames = new List<string> { AgentFunctionDefinitions.TOOL_NAME_REPLACE_SCRIPT_FILE } } }
             };
-            botParameters.geminiRequest.system_instruction = new Content { parts = new List<Part> { new Part { text = _systemInstructions } } };
+            botParameters.geminiRequest.system_instruction = new Content { parts = new List<Part> { new Part { text = systemPrompt } } };
             botParameters.onComplete += (result) =>
             {
                 if (string.IsNullOrEmpty(result)) return;
@@ -222,9 +322,13 @@ namespace Sanat.CodeGenerator.Agents
                 OnJobFailed?.Invoke("No file content received");
             }
         }
-        private string PrepareSystemPrompt()
+        private string PrepareSystemPrompt(string fileName = "")
         {
             string rawPrompt = LoadPrompt(_promptLocation);
+            if (fileName != "")
+            {
+                rawPrompt = Application.dataPath + $"{PROMPTS_FOLDER_PATH}{fileName}";
+            }
             rawPrompt = rawPrompt.Replace("\r", "");
             rawPrompt = rawPrompt.Replace("\n", "");
             return rawPrompt;
@@ -239,7 +343,7 @@ namespace Sanat.CodeGenerator.Agents
                 new ("assistant", possibleSolution),
                 new ("user", invalidationComment)
             };
-            ToolHandle(additionalMessages);
+            WriteCode(additionalMessages);
         }
     }
 }

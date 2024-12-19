@@ -22,8 +22,8 @@ namespace Sanat.CodeGenerator.Agents
             Temperature = .7f;
             StoreKeys(apiKeys);
             string promptLocation = Application.dataPath + $"{LOCAL_PROMPTS_FOLDER_PATH}{PromptFilename()}";
-            Instructions = LoadPrompt(promptLocation);
-            _prompt = $"{Instructions} # TASK: {task}. ";
+            PromptFromMdFile = LoadPrompt(promptLocation);
+            _prompt = $"{PromptFromMdFile} # TASK: {task}. ";
             SelectedApiProvider = ApiProviders.OpenAI;
         }
 
