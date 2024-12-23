@@ -22,7 +22,7 @@ namespace Sanat.CodeGenerator.Editor
             }
             else
             {
-                Debug.LogError($"Could not find script at path: {relativePath}");
+                Debug.Log($"Could not find script at path: {relativePath}. Failed to open not cached file. Try recompile solution.");
             }
         }
     }

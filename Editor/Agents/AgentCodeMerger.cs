@@ -224,7 +224,7 @@ namespace Sanat.CodeGenerator.Agents
 			return filePathList;
 		}
 
-		private bool CheckIfFileExists(string className)
+		public bool CheckIfFileExists(string className)
 		{
 			for (int i = 0; i < _projectCodePaths.Length; i++)
 			{
@@ -261,23 +261,8 @@ namespace Sanat.CodeGenerator.Agents
 		{
 			string promptLocation = Application.dataPath + $"{PROMPTS_FOLDER_PATH}{PROMPT_MERGE_CODE}";
 			string agentLogName = $"<color=cyan>{Name}</color>";
-			string oldCode = String.Empty;
+			string oldCode = GetCurrentCodeAtPath(fileContentToMerge.FilePath);
 			
-			Debug.Log($"<color=cyan>{Name}</color> normalizing path: {fileContentToMerge.FilePath}");
-			string normalizedPathToFind = Path.GetFullPath(fileContentToMerge.FilePath).Replace("/", Path.DirectorySeparatorChar.ToString()).Replace("\\", Path.DirectorySeparatorChar.ToString());
-
-			
-			if (fileContentToMerge.FilePath.Contains("/")) fileContentToMerge.FilePath.Replace("/", "\\");
-			foreach (var files in _projectCode)
-			{
-				string normalizedProjectPath = Path.GetFullPath(files.FilePath).Replace("/", Path.DirectorySeparatorChar.ToString()).Replace("\\", Path.DirectorySeparatorChar.ToString());
-
-				if (normalizedProjectPath.Equals(normalizedPathToFind, StringComparison.OrdinalIgnoreCase))
-				{
-					oldCode = files.Content;
-					break;
-				}
-			}
 			if (oldCode == String.Empty)
 			{
 				Debug.LogError($"<color=cyan>{Name}</color> <color=red>ERROR!</color> Could not find the old code for: {fileContentToMerge.FilePath}");
@@ -324,12 +309,30 @@ namespace Sanat.CodeGenerator.Agents
 			AskBot(botParameters);
 		}
 		
+		private string SafeUnescape(string code)
+		{
+			try
+			{
+				return Regex.Unescape(code);
+			}
+			catch (ArgumentException)
+			{
+				// If Regex.Unescape fails, use a custom unescaping approach
+				return code.Replace("\\\\", "\\")  // Handle escaped backslashes
+					.Replace("\\'", "'")     // Handle escaped single quotes
+					.Replace("\\\"", "\"")   // Handle escaped double quotes
+					.Replace("\\n", "\n")    // Handle newlines
+					.Replace("\\r", "\r")    // Handle carriage returns
+					.Replace("\\t", "\t");   // Handle tabs
+			}
+		}
+		
 		public void DirectInsertion(string filePath, string code)
 		{
 			SaveResultToFile(code);
 			filePath = filePath.Replace(":", string.Empty);
 			CompareAndFixFilePath(ref filePath);
-			code = Regex.Unescape(code);
+			code = SafeUnescape(code);
 			code = code.Replace("\r\n", "\n")  // First normalize to \n
 				.Replace("\r", "\n")      // Convert any remaining \r to \n
 				.Replace("\n", Environment.NewLine); // Then convert to platform-specific line endings
@@ -389,6 +392,29 @@ namespace Sanat.CodeGenerator.Agents
 			parameters.Required.Add(propertyFileContents);
 			ToolFunction function = new ToolFunction(name, description, parameters);
 			return function;
+		}
+
+		public string GetCurrentCodeAtPath(string filePath)
+		{
+			string oldCode = String.Empty;
+			string normalizedPathToFind = Path.GetFullPath(filePath).Replace("/", Path.DirectorySeparatorChar.ToString()).Replace("\\", Path.DirectorySeparatorChar.ToString());
+
+			string checkedPath = "";
+			
+			if (filePath.Contains("/")) filePath.Replace("/", "\\");
+			foreach (var file in _projectCode)
+			{
+				string normalizedProjectPath = Path.GetFullPath(file.FilePath).Replace("/", Path.DirectorySeparatorChar.ToString()).Replace("\\", Path.DirectorySeparatorChar.ToString());
+
+				checkedPath += file.FilePath + "\n";
+				if (normalizedProjectPath.Equals(normalizedPathToFind, StringComparison.OrdinalIgnoreCase))
+				{
+					return file.Content;
+					break;
+				}
+			}
+			Debug.LogError($"<color=cyan>{Name}</color> <color=red>ERROR!</color> Could not find the code for: {filePath}. Checked Pathes: {checkedPath}");
+			return String.Empty;
 		}
 	}
 }

@@ -36,7 +36,9 @@ namespace Sanat.ApiAnthropic
                 if (!success)
                 {
                     Debug.Log($"{webRequest.error}\n{webRequest.downloadHandler.text}");
-                    if (webRequest.downloadHandler.text.Contains("Overloaded"))
+                    bool isOverloaded = webRequest.downloadHandler.text.Contains("Overloaded");
+                    bool isInternalError = webRequest.downloadHandler.text.Contains("Internal Server Error");
+                    if (isOverloaded || isInternalError)
                     {
                         string oldModel = chatRequest.model;
                         chatRequest.model = Model.DowngradeModel(chatRequest.model);
@@ -61,8 +63,8 @@ namespace Sanat.ApiAnthropic
                     float outputCost = (tokensCompletion / 1000000f) * model.OutputPricePerMil;
                     float totalCost = inputCost + outputCost;
                     
-                    Debug.Log($"{model.Name} [<color=orange>{elapsedTime:F0}</color> sec] Usage(<color=green>{totalCost:F3}</color>$): {CommonForAnyApi.OUTPUT_TOKENS_SYMBOL} {tokensPrompt} (${inputCost:F6}); " +
-                              $"{CommonForAnyApi.INPUT_TOKENS_SYMBOL} {tokensCompletion} (${outputCost:F6}); " +
+                    Debug.Log($"{model.Name} [<color=orange>{elapsedTime:F0}</color> sec] Usage(<color=green>{totalCost:F3}</color>$): {CommonForAnyApi.OUTPUT_TOKENS_SYMBOL} {tokensPrompt/1000:F1} K (${inputCost:F6}); " +
+                              $"{CommonForAnyApi.INPUT_TOKENS_SYMBOL} {tokensCompletion/1000:F1} K (${outputCost:F6}); " +
                               $"total_tokens: {tokensTotal}");
                 }
                 callback?.Invoke(responseData);

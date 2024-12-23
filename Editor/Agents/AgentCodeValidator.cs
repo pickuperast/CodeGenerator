@@ -3,6 +3,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using Sanat.ApiGemini;
 using UnityEngine;
 using Sanat.ApiOpenAI;
@@ -73,39 +74,52 @@ namespace Sanat.CodeGenerator.Agents
             public string Comment;
         }
         
-        protected void DoLLMValidation(List<FileContent> fileContents, Action<string> invalidComment)
+        protected async Task DoLLMValidation(List<FileContent> fileContents, Action<string> invalidComment)
         {
             string promptLocation = Application.dataPath + $"{PROMPTS_FOLDER_PATH}{PROMPT_VALIDATE_SOLUTION_USING_TOOL}";
             string agentLogName = $"<color=yellow>{Name}</color>";
-            string question = JsonConvert.SerializeObject(fileContents);
-            _modelName = ApiOpenAI.Model.GPT4omini.Name;//ApiGroqModels.Llama3_70b_8192_tool.Name;
-            BotParameters botParameters = new BotParameters(question, ApiProviders.OpenAI, .2f, null, _modelName, true);
-            var openaiTools = new ApiOpenAI.Tool[] { new ("function", GetFunctionData_OpenaiValidateSolution()) };
-            botParameters.isToolUse = true;
-            botParameters.openaiTools = openaiTools;
-            botParameters.systemMessage = LoadPrompt(promptLocation);
-            botParameters.onOpenaiChatResponseComplete += (response) =>
+            foreach (var file in fileContents)
             {
-                Debug.Log($"{agentLogName} GetFilePath Result: {response}");
-                if (response.choices[0].finish_reason == "tool_calls")
+                string filePath = file.FilePath;
+                string className = file.FilePath.Split("/").Last();
+                bool fileExists = _agentCodeMerger.CheckIfFileExists(className);
+                string oldCode = "";
+                string question = $"{JsonConvert.SerializeObject(file)}";
+                if (fileExists)
                 {
-                    ToolCalls[] toolCalls = response.choices[0].message.tool_calls;
-                    ValidationData validationData = JsonConvert.DeserializeObject<ValidationData>(toolCalls[0].function.arguments);
-                    if (validationData.IsValid == 1)
-                    {
-                        Debug.Log($"{agentLogName} Solution is valid");
-                        _agentCodeMerger.MergeFiles(fileContents);
-                    }
-                    else
-                    {
-                        Debug.LogError($"{agentLogName} Solution is invalid: {validationData.Comment}");
-                        invalidComment?.Invoke(validationData.Comment);
-                    }
+                    oldCode = "# CURRENT CODE: " + _agentCodeMerger.GetCurrentCodeAtPath(filePath);
+                    question = $"{oldCode} # NEW IMPLEMENTATION: {JsonConvert.SerializeObject(file)}";
                 }
-            };
+                _modelName = ApiOpenAI.Model.GPT4omini.Name;//ApiGroqModels.Llama3_70b_8192_tool.Name;
+                BotParameters botParameters = new BotParameters(question, ApiProviders.OpenAI, .2f, null, _modelName, true);
+                var openaiTools = new ApiOpenAI.Tool[] { new ("function", GetFunctionData_OpenaiValidateSolution()) };
+                botParameters.isToolUse = true;
+                botParameters.openaiTools = openaiTools;
+                botParameters.systemMessage = LoadPrompt(promptLocation);
+                botParameters.onOpenaiChatResponseComplete += (response) =>
+                {
+                    Debug.Log($"{agentLogName} [DoLLMValidation] GetFilePath Result: {response}");
+                    if (response.choices[0].finish_reason == "tool_calls")
+                    {
+                        ToolCalls[] toolCalls = response.choices[0].message.tool_calls;
+                        ValidationData validationData = JsonConvert.DeserializeObject<ValidationData>(toolCalls[0].function.arguments);
+                        if (validationData.IsValid == 1)
+                        {
+                            Debug.Log($"{agentLogName} Solution is valid");
+                            _agentCodeMerger.MergeFiles(new List<FileContent> { file });
+                        }
+                        else
+                        {
+                            Debug.LogError($"{agentLogName} Solution is invalid: {validationData.Comment}");
+                            invalidComment?.Invoke(validationData.Comment);
+                        }
+                    }
+                };
             
             
-            AskBot(botParameters);
+                AskBot(botParameters);
+                await Task.Delay(100);
+            }
         }
         
         public void ValidateSolution(List<FileContent> fileContents, Action<string> onInvalidCommentProvided)

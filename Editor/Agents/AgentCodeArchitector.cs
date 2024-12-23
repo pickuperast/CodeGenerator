@@ -8,6 +8,7 @@ using Sanat.ApiOpenAI;
 using UnityEngine;
 using Antrophic = Sanat.ApiAnthropic.ApiAntrophicData;
 using GeminiChatRequest = Sanat.ApiGemini.ChatRequest;
+using Model = Sanat.ApiGemini.Model;
 
 namespace Sanat.CodeGenerator.Agents
 {
@@ -125,6 +126,8 @@ namespace Sanat.CodeGenerator.Agents
                 OnFileTasksProvided?.Invoke(fileTasks);
                 SelectedApiProvider = ApiProviders.OpenAI;
                 _modelName = ApiOpenAI.Model.GPT4omini.Name;
+                SelectedApiProvider = ApiProviders.Gemini;
+                _modelName = Model.Flash2.Name;
                 for (int i = 0; i < fileTasks.Count; i++)
                 {
                     var fileTask = fileTasks[i];

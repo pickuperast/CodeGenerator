@@ -61,10 +61,10 @@ namespace Sanat.CodeGenerator.Agents
             _task = $"{task}";
             PromptFromMdFile = LoadPrompt(_promptLocation);
             _systemInstructions = $"{PromptFromMdFile} # PROJECT CODE: " + includedCode;
-            SelectedApiProvider = ApiProviders.Anthropic;
-            _modelName = ApiAnthropic.Model.Claude35Latest.Name;
             SelectedApiProvider = ApiProviders.Gemini;
             _modelName = ApiGemini.Model.Flash2.Name;
+            SelectedApiProvider = ApiProviders.Anthropic;
+            _modelName = ApiAnthropic.Model.Claude35Latest.Name;
         }
 
         public override void Handle(string input)
@@ -81,6 +81,22 @@ namespace Sanat.CodeGenerator.Agents
             switch (botParameters.apiProvider)
             {
                 case ApiProviders.OpenAI:
+                    
+                    break;
+
+                case ApiProviders.Gemini:
+                    botParameters.geminiRequest = new GeminiChatRequest(_task, Temperature);
+                    botParameters.geminiRequest.system_instruction = new Content { parts = new List<Part> { new Part { text = _systemInstructions } } };
+                    botParameters.onComplete += (result) =>
+                    {
+                        if (string.IsNullOrEmpty(result)) return;
+                        SaveResultToFile(JsonConvert.SerializeObject(result));
+                        Debug.Log($"{DebugName}: {result}");
+                        OnTextAnswerProvided?.Invoke(result);
+                    };
+                    break;
+
+                case ApiProviders.Anthropic:
                     botParameters.antrophicRequest = new Antrophic.ChatRequest(_modelName, .5f, new List<Antrophic.ChatMessage>
                     {
                         new ("assistant", _systemInstructions),
@@ -103,22 +119,6 @@ namespace Sanat.CodeGenerator.Agents
                         }
                         
                     };
-                    break;
-
-                case ApiProviders.Gemini:
-                    botParameters.geminiRequest = new GeminiChatRequest(_task, Temperature);
-                    botParameters.geminiRequest.system_instruction = new Content { parts = new List<Part> { new Part { text = _systemInstructions } } };
-                    botParameters.onComplete += (result) =>
-                    {
-                        if (string.IsNullOrEmpty(result)) return;
-                        SaveResultToFile(JsonConvert.SerializeObject(result));
-                        Debug.Log($"{DebugName}: {result}");
-                        OnTextAnswerProvided?.Invoke(result);
-                    };
-                    break;
-
-                case ApiProviders.Anthropic:
-                    ToolHandlingAntrophic(additionalMessages, systemPrompt);
                     break;
             }
             

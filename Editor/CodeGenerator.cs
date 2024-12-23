@@ -224,12 +224,14 @@ namespace Sanat.CodeGenerator
             UpdateProgress(0.1f);
             agentCodeHighLevelArchitector.OnTextAnswerProvided += (string techSpec) =>
             {
+                if (!isGeneratingCode) return;
                 UpdateProgress(0.3f);
                 agentCodeArchitector.ChangeTask(techSpec);
                 agentCodeArchitector.OnFileContentProvided += (List<AbstractAgentHandler.FileContent> fileContents) =>
                 {
+                    if (!isGeneratingCode) return;
                     AgentCodeValidator agentValidator = new AgentCodeValidator(apiKeys, taskInput, classToPath, includedCode, "", agentCodeMerger as AgentCodeMerger);
-            
+                    
                     UpdateProgress(0.8f);
                     agentValidator.ValidateSolution(fileContents, (string comment) =>
                     {
