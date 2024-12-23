@@ -9,6 +9,10 @@
 ---
 
 **Code Generator** simplifies the process of generating and integrating code within your Unity project. This plugin provides an intuitive interface for selecting class names, generating prompts, and utilizing AI APIs to automate code generation.
+**Agency Workflow** High Level Architector->Delta merge extractor->Code Merger->Validator->Code Writer
+**Current Best Workflow Setup** Gemini-2.0-flash-exp, openai-4omini
+**Available providers to switch to** Antrophic, Groq
+
 
 ## Key Features
 
